@@ -1,0 +1,24 @@
+id: hytale
+name: Hytale
+description: >-
+  PROVISIONAL. Hytale's server networking has not been pinned down here, and
+  the project's status has been in flux. Ports below are a placeholder so the
+  plumbing can be exercised end to end; correct them once real server
+  documentation exists, which is a one-file change.
+ports:
+  - id: game
+    label: Game
+    protocol: udp
+    default_port: 25565
+
+  - id: game-tcp
+    label: Game (TCP, if the server uses one)
+    protocol: tcp
+    default_port: 25565
+    optional: true
+
+notes:
+  - >-
+    Treat this profile as unverified. Nothing else in the system depends on its
+    values being right — profiles are data, and fixing this one does not touch
+    the gateway or agent.

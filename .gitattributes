@@ -1,0 +1,8 @@
+# Keep the repository LF-only. The gateway ships in a Linux container and the
+# agent builds on Windows, so without this the same file churns between
+# checkouts.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.dll binary

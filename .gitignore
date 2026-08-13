@@ -1,0 +1,28 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Secrets — this project handles Cloudflare API tokens and WireGuard private
+# keys. Keep them out of history; a leaked key is a leaked key even after a
+# force-push.
+.env
+*.env
+!.env.example
+*.key
+*.pem
+wg*.conf
+config.local.toml
+
+# Local state
+/data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Editors / OS
+/.idea
+/.vscode
+.claude/settings.local.json
+.DS_Store
+Thumbs.db

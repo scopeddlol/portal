@@ -1,0 +1,28 @@
+id: minecraft-bedrock
+name: Minecraft (Bedrock Edition)
+description: >-
+  Bedrock uses RakNet over UDP and ignores SRV records, so the port is part of
+  what players type unless it lands on the default.
+ports:
+  - id: game
+    label: Game
+    protocol: udp
+    default_port: 19132
+    # Bedrock clients on consoles and mobile often cannot enter a custom port
+    # at all, so refuse to silently relocate this one — a collision should be a
+    # visible error, not a server nobody can join.
+    edge_port_fixed: true
+
+  - id: game-ipv6
+    label: Game (IPv6 listener)
+    protocol: udp
+    default_port: 19133
+    optional: true
+
+notes:
+  - >-
+    Only one Bedrock service can hold UDP 19132 on a given public IP. If you
+    need a second, it will get a non-default port and players must type
+    host:port — which the Bedrock UI supports on PC but not on every console.
+  - >-
+    Bedrock has no SRV support. The A record alone is what players use.
