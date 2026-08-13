@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Portal — play together, keep your address private">
+  <title>Portal</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="100%" stop-color="#141C33"/>
+    </linearGradient>
+
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="55%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#C084FC"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.40"/>
+      <stop offset="60%" stop-color="#818CF8" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#818CF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Self-contained dark panel: the banner carries its own background so it
+       reads the same on GitHub's light and dark themes. -->
+  <rect width="1200" height="300" rx="28" fill="url(#bg)"/>
+
+  <!-- The mark: a portal ring with traffic passing through it. -->
+  <g>
+    <circle cx="170" cy="150" r="118" fill="url(#glow)"/>
+
+    <!-- Traffic in from home, out to players. -->
+    <path d="M58 150 H104" stroke="#22D3EE" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+    <circle cx="52" cy="150" r="9" fill="#22D3EE"/>
+    <path d="M236 150 H282" stroke="#C084FC" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+    <path d="M280 137 L302 150 L280 163 Z" fill="#C084FC"/>
+
+    <circle cx="170" cy="150" r="62" fill="none" stroke="url(#ring)" stroke-width="13"/>
+    <circle cx="170" cy="150" r="38" fill="none" stroke="url(#ring)" stroke-width="5" opacity="0.55"/>
+    <circle cx="170" cy="150" r="16" fill="url(#ring)" opacity="0.30"/>
+  </g>
+
+  <g font-family="Segoe UI, Inter, Roboto, Helvetica Neue, Arial, sans-serif">
+    <text x="352" y="140" font-size="98" font-weight="800" letter-spacing="8" fill="#F4F6FB">PORTAL</text>
+    <text x="358" y="205" font-size="30" font-weight="500" fill="#93A3BC">Play together. Keep your home address private.</text>
+  </g>
+</svg>

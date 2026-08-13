@@ -1,151 +1,110 @@
-# Portal — self-hosted game server proxy
+<p align="center">
+  <img src="assets/banner.svg" alt="Portal" width="820">
+</p>
 
-Run game servers at home without exposing your home IP or forwarding a single
-port on your router. A small agent next to the game server holds a WireGuard
-tunnel open to a VPS you control; the VPS is the public edge, and Cloudflare
-DNS is kept in sync automatically so each server gets a real subdomain.
+<p align="center">
+  <a href="https://github.com/scopeddlol/portal/actions/workflows/release.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/scopeddlol/portal/release.yml?style=for-the-badge&label=build&labelColor=0B1020&color=22D3EE"></a>
+  <img alt="Status" src="https://img.shields.io/badge/status-beta%20v0.1-818CF8?style=for-the-badge&labelColor=0B1020">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-C084FC?style=for-the-badge&labelColor=0B1020"></a>
+  <img alt="Rust" src="https://img.shields.io/badge/built%20with-Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white&labelColor=0B1020">
+  <img alt="Docker" src="https://img.shields.io/badge/runs%20with-Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=0B1020">
+  <img alt="Linux" src="https://img.shields.io/badge/home%20PC-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=white&labelColor=0B1020">
+</p>
 
-## What Cloudflare does and does not do here
+<p align="center">
+  <b>Let friends join game servers on your home PC — without touching your router or sharing your home address.</b>
+</p>
 
-Cloudflare's proxy (the orange cloud) only handles HTTP/HTTPS on a fixed set of
-ports. It will not carry TCP 25565 or UDP 24454. Cloudflare **Spectrum** does
-proxy raw TCP/UDP — there is a Minecraft-specific offering on Pro/Business
-plans — but generic TCP/UDP applications, which is what a voice-chat UDP port
-is, sit behind an Enterprise add-on. Spectrum is also not a tunnel: it still
-needs a reachable origin.
+---
 
-So in this design **Cloudflare is a DNS control plane, not a data plane**. The
-API token writes DNS-only (grey-cloud) `A` records plus `SRV` records. Your VPS
-is what players actually connect to, and your home IP is never published.
+## What is this?
 
-## Shape
+You want to run a Minecraft server on your own PC and have friends join. Normally that means two uncomfortable things: opening a port on your home router, and handing out your home IP address — which quietly tells people roughly where you live.
 
-```
-   home / LAN                          VPS (public IP)                players
-┌────────────────────┐          ┌──────────────────────────┐
-│ game servers       │          │ nftables DNAT            │
-│  :25565/tcp        │          │  :25565/tcp ─┐           │  ──▶ mc.example.com
-│  :24454/udp        │          │  :24454/udp ─┤           │
-│                    │          │              ▼           │
-│ agent              │◀════════▶│ wg0  10.99.0.1           │
-│  kernel WireGuard  │ WireGuard│ (kernel WireGuard)       │
-│  + TCP/UDP relay   │  UDP/51820│                          │
-│                    │          │ gateway (Rust)           │
-└────────────────────┘          │  web UI, API,            │
-                                │  port allocator,         │
-                                │  Cloudflare reconciler   │
-                                └──────────────────────────┘
-```
+Portal removes both. You rent a small server somewhere (about **$5 a month**), and Portal joins your home PC to it through a private, encrypted tunnel. Friends connect to a normal address like `mc.yourdomain.com`, which points at the **rented** server. Your home address is never published, and nothing on your router changes.
 
-The gateway process never touches a packet of game traffic. Publishing a port
-is an nftables DNAT rule into the tunnel subnet; the kernel does the rest. That
-keeps latency overhead to the WireGuard encryption itself and means a gateway
-restart does not drop anyone's connection.
+<p align="center">
+  <img src="assets/how-it-works.svg" alt="Friends connect to your domain, which points at a small rented server, which passes traffic down an encrypted tunnel to your PC at home" width="820">
+</p>
 
-On the agent side, the tunnel sits behind a `TunnelBackend` trait and the
-forwarding engine only ever asks it for an address to bind on. Today that is
-kernel WireGuard, which is essentially free on Linux and in Docker: the agent
-accepts on its tunnel address and opens an ordinary socket to the game server
-on `127.0.0.1`.
+Portal also handles the fiddly parts for you: it picks the port numbers, writes the DNS records so your address just works, and knows that a Minecraft server with voice chat needs two ports rather than one.
 
-The intended second backend runs `boringtun` and `smoltcp` in userspace, so a
-Windows build would need no TUN driver and no administrator rights. **That one
-is not written yet** — see [Status](#status).
+## What you need
 
-## Multiple ports on one domain
-
-The model is one `Service` (= one subdomain) owning many `PortMapping`s:
-
-```
-mc.example.com  →  A 203.0.113.10          (DNS-only)
-  ├─ tcp 25565  →  _minecraft._tcp SRV     (Java clients need no port)
-  └─ udp 24454  →  advertised via voice_host
-```
-
-Which ports a service needs comes from **composable game profiles** — YAML in
-[`profiles/`](profiles/), not code. A Minecraft server with proximity voice
-selects `minecraft-java` and `simple-voice-chat`, and the union of their port
-templates is allocated. Adding a game is a new YAML file.
-
-Edge ports are allocated per service and do not have to equal the local port,
-because two servers on one machine can both want 25565 and only one can have it
-on the public IP. Profiles say when that is not allowed: Bedrock's UDP 19132 is
-marked `edge_port_fixed`, because console clients often cannot enter a custom
-port, so a collision must surface as an error instead of an unjoinable server.
-
-## Layout
-
-| Path | What |
+| | |
 | --- | --- |
-| `crates/proto` | Shared model, wire types, profile schema |
-| `crates/gateway` | VPS side: API, web UI, WireGuard peers, nftables, Cloudflare |
-| `crates/agent-core` | Tunnel client and forwarding engine |
-| `crates/agent-cli` | Headless agent (Linux/Docker) |
-| `profiles/` | Game profiles |
-| `deploy/` | Docker Compose, example config, deployment notes |
+| 🌐 **A domain name** | Managed by Cloudflare. Roughly $10 a year. |
+| 🖥️ **A small rented server** | Any cheap Linux VPS with a public IP. About $5 a month. |
+| 🏠 **A home PC** | Running Linux or Docker, where your game servers live. |
 
-## Getting it running
+## Setup
 
-See [`deploy/README.md`](deploy/README.md). The short version: Docker Compose
-on the VPS, an enrollment token from the web UI, one command at home.
-
-## Status
-
-Usable end to end on Linux, with one significant gap.
-
-**Built and tested**
-
-- `crates/proto` — shared model, profile schema, WireGuard keys.
-- `crates/gateway` — port allocation, service planning, DNS reconciliation,
-  SQLite storage, HTTP API, web UI, nftables, WireGuard peer management,
-  Cloudflare client.
-- `crates/agent-core` / `crates/agent-cli` — enrollment, assignment polling,
-  and the TCP/UDP forwarding engine, over kernel WireGuard.
-- `deploy/` — Compose files for both halves.
-
-**Not built**
-
-- The userspace tunnel backend. The Windows agent is meant to run `boringtun`
-  and `smoltcp` so it needs no TUN driver and no administrator rights; today
-  the agent uses kernel WireGuard via `wg-quick`, so it wants `CAP_NET_ADMIN`
-  and a Linux host. The `TunnelBackend` trait is the seam that backend slots
-  into — the forwarding engine only ever asks for an address to bind on.
-- `hytale` profile port numbers are placeholders. Fixing them is one YAML file.
-- IPv6. Everything is IPv4 end to end.
-
-Some behaviour worth knowing about, since it is decided rather than obvious:
-
-- A service is given its game's well-known public port when nothing else holds
-  it, so the first Minecraft server on a VPS looks exactly like one with a
-  forwarded port. Later services fall back to `30000-32767` — below Linux's
-  ephemeral range, so an allocated port cannot collide with an outbound
-  connection the VPS makes itself.
-- Java clients follow the `SRV` record, so a relocated edge port stays
-  invisible: players still type `smp.example.com`. Bedrock cannot, which is
-  why its port is fixed and a second Bedrock service is an error.
-- DNS reconciliation only ever touches a service's own name and the records
-  beneath it, so it cannot delete the `MX` records for your mail while
-  tidying up a game server.
-- Return traffic is masqueraded into the tunnel, so the game server sees
-  connections from the tunnel address rather than the player's real IP. Ban
-  lists and IP-based plugins will see one address for everyone.
-- Tokens are stored as hashes, so a copy of `portal.db` yields no working
-  credentials. Each agent's WireGuard peer is allowed exactly its own `/32`,
-  so one compromised home machine cannot source traffic as another.
-
-## Building
-
-Rust 1.82+. If you would rather not install a toolchain:
+### 1. Set up the rented server
 
 ```bash
-docker run --rm -v "$PWD:/w" -w /w rust:1-slim cargo test --workspace
+git clone https://github.com/scopeddlol/portal.git
+cd portal/deploy
+cp config.example.toml config.toml
+nano config.toml     # fill in your domain and the server's IP address
 ```
 
-The test suite is all offline — no VPS, no Cloudflare account, no root. The
-forwarding tests bind real sockets on loopback and push bytes through them.
+Add your two secrets, then start it:
 
-`scripts/smoke.sh` goes further and exercises the real binaries end to end:
-it starts a gateway, enrolls an agent against it, publishes a service, and
-pushes bytes through the forwarder to a stand-in game server. It needs root
-for one loopback alias, and skips the parts that require a public IP — DNS
-writes and DNAT.
+```bash
+cat > .env <<'EOF'
+PORTAL_CF_API_TOKEN=<your Cloudflare token>
+PORTAL_ADMIN_TOKEN=<any long random password you make up>
+EOF
+chmod 600 .env
+
+docker compose up -d --build
+```
+
+The Cloudflare token comes from your Cloudflare dashboard and needs one permission: **Zone → DNS → Edit**.
+
+### 2. Connect your home PC
+
+Open the web page (see [the setup notes](deploy/README.md) for how to reach it safely), sign in with your admin password, and click **Create enrollment token**. Then on the PC with your game servers:
+
+```bash
+cd portal/deploy
+docker compose -f agent-compose.yml run --rm agent \
+  enroll --gateway https://portal.yourdomain.com --token <token> --name my-pc
+docker compose -f agent-compose.yml up -d
+```
+
+### 3. Add your game server
+
+Back on the web page: pick your PC, give the server a name, choose an address like `mc`, tick the games it runs, and press **Create**.
+
+That's it. Your friends can now connect to `mc.yourdomain.com`.
+
+## Games it knows about
+
+| Game | Notes |
+| --- | --- |
+| 🟩 **Minecraft (Java)** | Friends type just `mc.yourdomain.com`, no port number needed |
+| 🟦 **Minecraft (Bedrock)** | Consoles and phones can join too |
+| 🎙️ **Simple Voice Chat** | Add-on for Java — tick it alongside Minecraft |
+| 🧪 **Hytale** | Placeholder — the port numbers are guesses until the game exists |
+
+Adding another game is one small text file, not a code change. See [`profiles/`](profiles/).
+
+## Good to know
+
+This is a **beta**. It works, but a few things are worth knowing before you rely on it:
+
+- **Your home PC needs Linux or Docker.** A native Windows version is planned but not built yet.
+- **Your game server sees one address for everyone.** Player IP addresses arrive looking identical, so IP bans and IP-based plugins won't behave as you'd expect.
+- **IPv4 only** for now.
+- **You still set your own game config.** If you use voice chat, the web page tells you exactly which line to change and where — Portal won't edit your server files behind your back.
+
+## Learn more
+
+- 📘 [**Full setup and troubleshooting**](deploy/README.md) — safer ways to reach the web page, running without Docker, checking it works
+- 🔧 [**How it works inside**](docs/how-it-works.md) — the architecture, why Cloudflare can't carry game traffic, and the design decisions
+- 🧩 [**Game profiles**](profiles/) — add support for another game
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
