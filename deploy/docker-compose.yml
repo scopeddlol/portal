@@ -1,0 +1,36 @@
+# VPS side. Run this on the machine with the public IP.
+#
+# network_mode: host is not laziness. The gateway writes nftables rules in the
+# host's network namespace and drives a WireGuard interface there; a bridged
+# container would program a namespace no player can reach.
+
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: gateway
+    container_name: portal-gateway
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      # NET_ADMIN for nftables and WireGuard. NET_RAW is not needed: the
+      # gateway never touches a packet itself.
+      - NET_ADMIN
+    sysctls:
+      # DNAT without forwarding enabled silently drops every game packet.
+      - net.ipv4.ip_forward=1
+    volumes:
+      - portal-data:/var/lib/portal
+      - ./config.toml:/etc/portal/config.toml:ro
+      - ../profiles:/etc/portal/profiles:ro
+      - /etc/portal/keys:/etc/portal/keys
+    environment:
+      # Secrets stay out of config.toml. Put them in deploy/.env, which is
+      # gitignored, or hand them in from your own secret store.
+      - PORTAL_CF_API_TOKEN=${PORTAL_CF_API_TOKEN}
+      - PORTAL_ADMIN_TOKEN=${PORTAL_ADMIN_TOKEN}
+      - RUST_LOG=portal_gateway=info
+
+volumes:
+  portal-data:

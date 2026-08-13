@@ -1,0 +1,32 @@
+# Home side. Run this next to your game servers.
+#
+# Enroll once before starting it:
+#
+#   docker compose -f agent-compose.yml run --rm agent \
+#     enroll --gateway https://portal.example.com --token <token> --name basement-box
+#
+# The token comes from the gateway's web UI and is good for an hour.
+
+services:
+  agent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: agent
+    container_name: portal-agent
+    restart: unless-stopped
+    # Host networking so `127.0.0.1` means the machine the game servers are on.
+    # If your servers run in other containers, drop this and point the agent at
+    # their service names instead with a local port override per service.
+    network_mode: host
+    cap_add:
+      # Needed to create the WireGuard interface. This is the requirement the
+      # userspace boringtun backend is meant to remove, once it exists.
+      - NET_ADMIN
+    volumes:
+      - agent-data:/var/lib/portal-agent
+    environment:
+      - RUST_LOG=portal_agent_core=info
+
+volumes:
+  agent-data:

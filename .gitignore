@@ -12,6 +12,9 @@
 *.pem
 wg*.conf
 config.local.toml
+# The deployed config names a zone and a VPS; the example stays, the real one
+# does not.
+deploy/config.toml
 
 # Local state
 /data
