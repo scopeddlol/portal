@@ -185,6 +185,83 @@ impl Planner<'_> {
     }
 }
 
+/// What a stored service looks like to the UI and to the DNS reconciler.
+#[derive(Debug, Clone)]
+pub struct ServiceDescription {
+    pub fqdn: String,
+    pub endpoints: Vec<Endpoint>,
+    pub config_actions: Vec<ConfigAction>,
+    pub dns: Vec<DnsRecord>,
+}
+
+/// Derive a service's public face from what is actually stored.
+///
+/// Deliberately not reusing the plan produced at creation time: the database
+/// is the source of truth, so what the UI shows and what the reconciler
+/// publishes cannot drift from what is really forwarded.
+///
+/// A mapping whose profile has since been edited or removed still yields an
+/// endpoint — the port is forwarded either way, and a running server should
+/// not vanish from the UI because someone tidied up a YAML file.
+pub fn describe_service(
+    profiles: &ProfileSet,
+    service: &Service,
+    mappings: &[PortMapping],
+    zone: &str,
+    edge_ip: Ipv4Addr,
+) -> ServiceDescription {
+    let fqdn = service.fqdn(zone);
+    let mut endpoints = Vec::with_capacity(mappings.len());
+    let mut config_actions = Vec::new();
+    let mut srvs = Vec::new();
+
+    for mapping in mappings {
+        let template = lookup_template(profiles, &mapping.template_id);
+        endpoints.push(Endpoint {
+            host: fqdn.clone(),
+            port: mapping.edge_port,
+            protocol: mapping.protocol,
+            port_implied_by_srv: template.is_some_and(|t| t.srv.is_some()),
+        });
+        let Some(template) = template else { continue };
+        if let Some(hint) = &template.server_config {
+            config_actions.push(ConfigAction {
+                file: hint.file.clone(),
+                key: hint.key.clone(),
+                value: hint.render(&fqdn, mapping.edge_port),
+                explanation: hint.explanation.clone(),
+            });
+        }
+        if let Some(spec) = &template.srv {
+            srvs.push(SrvBinding {
+                spec,
+                edge_port: mapping.edge_port,
+            });
+        }
+    }
+
+    let dns = service_records(&fqdn, edge_ip, srvs);
+    ServiceDescription {
+        fqdn,
+        endpoints,
+        config_actions,
+        dns,
+    }
+}
+
+/// Resolve a `profile-id/template-id` key back to its template.
+fn lookup_template<'p>(
+    profiles: &'p ProfileSet,
+    key: &str,
+) -> Option<&'p portal_proto::profile::PortTemplate> {
+    let (profile_id, template_id) = key.split_once('/')?;
+    profiles
+        .get(profile_id)?
+        .ports
+        .iter()
+        .find(|t| t.id == template_id)
+}
+
 /// A port template that made it into the plan, with its local port resolved.
 #[derive(Debug, Clone)]
 struct SelectedPort<'t> {
@@ -537,6 +614,58 @@ mod tests {
         )
         .unwrap();
         assert_eq!(plan.fqdn, "example.com");
+    }
+
+    #[test]
+    fn a_stored_service_describes_itself_the_same_way_it_was_planned() {
+        let profiles = profiles();
+        let planned = plan(
+            &profiles,
+            &mut allocator(),
+            &request("mc", &["minecraft-java", "simple-voice-chat"]),
+        )
+        .unwrap();
+
+        let described = describe_service(
+            &profiles,
+            &planned.service,
+            &planned.mappings,
+            "example.com",
+            IP,
+        );
+        assert_eq!(described.fqdn, planned.fqdn);
+        assert_eq!(described.endpoints.len(), planned.endpoints.len());
+        assert_eq!(described.dns, planned.dns);
+        assert_eq!(
+            described.config_actions[0].value,
+            planned.config_actions[0].value
+        );
+    }
+
+    #[test]
+    fn a_service_survives_its_profile_being_deleted() {
+        let profiles = profiles();
+        let planned = plan(
+            &profiles,
+            &mut allocator(),
+            &request("mc", &["minecraft-java"]),
+        )
+        .unwrap();
+
+        // The operator removed the YAML file; the port is still forwarded.
+        let described = describe_service(
+            &ProfileSet::default(),
+            &planned.service,
+            &planned.mappings,
+            "example.com",
+            IP,
+        );
+        assert_eq!(described.endpoints.len(), 1);
+        assert_eq!(described.endpoints[0].port, 25565);
+        assert!(
+            !described.endpoints[0].port_implied_by_srv,
+            "without the profile we can no longer claim SRV covers the port"
+        );
     }
 
     #[test]

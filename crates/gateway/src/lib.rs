@@ -16,9 +16,20 @@
 //! nftables, the Cloudflare client) build on top of these.
 
 pub mod alloc;
+pub mod cloudflare;
+pub mod config;
 pub mod dns;
+pub mod http;
+pub mod net;
+pub mod nft;
 pub mod plan;
+pub mod store;
+pub mod token;
+pub mod wgctl;
 
 pub use alloc::{AllocError, EdgePortRange, PortAllocator, PortRequest};
+pub use config::Config;
 pub use dns::{DnsPlan, DnsRecord, ExistingRecord};
+pub use net::Ipv4Net;
 pub use plan::{PlanError, Planner, ServicePlan};
+pub use store::Store;
