@@ -9,6 +9,10 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      version:
+        description: "Version to tag the images with, e.g. 0.1.0-beta. Required when dispatching from a branch, since there is no tag to read it from."
+        required: true
+        type: string
       platforms:
         description: "Target platforms (arm64 builds under emulation and is slow)"
         required: false
@@ -71,10 +75,13 @@ jobs:
           # skip it for a prerelease tag; saying so explicitly means a later
           # change to the tag pattern cannot quietly promote one.
           flavor: latest=false
+          # Two paths in: a `v*` tag supplies the version itself, and a manual
+          # dispatch from a branch has to be told it.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=beta,enable=${{ contains(github.ref_name, 'beta') }}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=beta,enable=${{ contains(github.ref_name, 'beta') || contains(inputs.version, 'beta') }}
             type=sha,format=short
           labels: |
             org.opencontainers.image.title=${{ matrix.image }}
