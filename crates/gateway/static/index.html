@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal</title>
+<style>
+  :root {
+    --bg: #10131a; --panel: #171b24; --line: #262c38; --text: #e6e9ef;
+    --muted: #9aa3b2; --accent: #6ea8fe; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9; --panel: #fff; --line: #e2e5ea; --text: #1a1d24;
+      --muted: #667085; --accent: #2563eb; --ok: #16a34a; --warn: #b45309; --bad: #dc2626;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 7px;
+    padding: 8px 13px; font-size: 14px; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  input, select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 8px 10px; font-size: 14px; font-family: inherit;
+  }
+  label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+  .pill.on { color: var(--ok); border-color: currentColor; }
+  .pill.off { color: var(--muted); }
+  .pill.warn { color: var(--warn); border-color: currentColor; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .banner { padding: 11px 14px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 14px; }
+  .banner.bad { color: var(--bad); border-color: currentColor; }
+  .banner.ok { color: var(--ok); border-color: currentColor; }
+  .checks { display: grid; gap: 6px; margin-top: 6px; }
+  .checks label { grid-template-columns: auto 1fr; align-items: center; color: var(--text); }
+  .hide { display: none; }
+  .endpoint { font-weight: 600; }
+  ul.notes { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Portal</h1>
+  <span class="muted mono" id="status-line">not connected</span>
+  <span style="flex:1"></span>
+  <button class="ghost" id="sign-out">Sign out</button>
+</header>
+
+<main>
+  <div id="error" class="banner bad hide"></div>
+
+  <section class="panel" id="login">
+    <h2>Admin token</h2>
+    <p class="muted">Printed in the gateway's log on first start, or set with <code>PORTAL_ADMIN_TOKEN</code>.</p>
+    <div class="row">
+      <input type="password" id="token" placeholder="token" style="flex:1;min-width:240px">
+      <button id="sign-in">Sign in</button>
+    </div>
+  </section>
+
+  <div id="app" class="hide">
+    <section class="panel">
+      <h2>Agents</h2>
+      <table id="agents"><tbody></tbody></table>
+      <div class="row" style="margin-top:14px">
+        <input id="agent-label" placeholder="new machine, e.g. basement-box">
+        <button id="new-token">Create enrollment token</button>
+      </div>
+      <div id="token-out" class="banner ok hide"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Services</h2>
+      <table id="services"><tbody></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>Add a service</h2>
+      <div class="grid2">
+        <label>Agent<select id="f-agent"></select></label>
+        <label>Name<input id="f-name" placeholder="SMP season 4"></label>
+        <label>Subdomain<input id="f-sub" placeholder="mc"></label>
+      </div>
+      <div style="margin-top:14px">
+        <div class="muted" style="font-size:13px">Games</div>
+        <div class="checks" id="f-profiles"></div>
+      </div>
+      <div style="margin-top:14px" id="optional-wrap" class="hide">
+        <div class="muted" style="font-size:13px">Optional ports</div>
+        <div class="checks" id="f-optional"></div>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button id="create">Create service</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+let token = localStorage.getItem("portal-token") || "";
+let profiles = [];
+let agents = [];
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "Authorization": "Bearer " + token,
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) { signOut(); throw new Error("Token rejected."); }
+  if (res.status === 204) return null;
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+  return body;
+}
+
+function showError(message) {
+  const el = $("#error");
+  el.textContent = message;
+  el.classList.toggle("hide", !message);
+}
+
+function signOut() {
+  token = "";
+  localStorage.removeItem("portal-token");
+  $("#app").classList.add("hide");
+  $("#login").classList.remove("hide");
+  $("#status-line").textContent = "not connected";
+}
+
+async function refresh() {
+  showError("");
+  const status = await api("/api/status");
+  $("#status-line").textContent =
+    `${status.zone} → ${status.public_ip} · tunnel ${status.tunnel_subnet} · ports ${status.edge_port_range}` +
+    (status.cloudflare_enabled ? "" : " · DNS writes off") +
+    (status.nftables_enabled ? "" : " · nftables off");
+
+  profiles = await api("/api/profiles");
+  agents = await api("/api/agents");
+  renderAgents();
+  renderProfilePickers();
+  await renderServices();
+}
+
+function renderAgents() {
+  const body = $("#agents tbody");
+  body.innerHTML = "";
+  if (!agents.length) {
+    body.innerHTML = `<tr><td class="muted">No agents yet. Create an enrollment token and run the agent on the machine with your game servers.</td></tr>`;
+  }
+  for (const a of agents) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(a.name)}</strong><div class="muted mono">${a.tunnel_ip}</div></td>
+      <td><span class="pill ${a.online ? "on" : "off"}">${a.online ? "online" : "offline"}</span></td>
+      <td class="muted">${a.service_count} service${a.service_count === 1 ? "" : "s"}</td>
+      <td style="text-align:right"><button class="danger" data-del-agent="${a.id}">Remove</button></td>`;
+    body.appendChild(tr);
+  }
+  const select = $("#f-agent");
+  select.innerHTML = agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join("");
+}
+
+function renderProfilePickers() {
+  $("#f-profiles").innerHTML = profiles.map((p) => `
+    <label><input type="checkbox" name="profile" value="${p.id}">
+    ${escapeHtml(p.name)}${p.addon ? ' <span class="pill">add-on</span>' : ""}</label>`).join("");
+  for (const box of document.querySelectorAll('input[name=profile]')) {
+    box.addEventListener("change", renderOptionalPorts);
+  }
+  renderOptionalPorts();
+}
+
+function selectedProfiles() {
+  return [...document.querySelectorAll('input[name=profile]:checked')].map((b) => b.value);
+}
+
+function renderOptionalPorts() {
+  const chosen = selectedProfiles();
+  const optional = [];
+  for (const p of profiles) {
+    if (!chosen.includes(p.id)) continue;
+    for (const port of p.ports) {
+      if (port.optional) optional.push({ key: `${p.id}/${port.id}`, label: `${p.name}: ${port.label}` });
+    }
+  }
+  $("#optional-wrap").classList.toggle("hide", optional.length === 0);
+  $("#f-optional").innerHTML = optional.map((o) =>
+    `<label><input type="checkbox" name="optional" value="${o.key}"> ${escapeHtml(o.label)}</label>`).join("");
+}
+
+async function renderServices() {
+  const services = await api("/api/services");
+  const body = $("#services tbody");
+  body.innerHTML = "";
+  if (!services.length) {
+    body.innerHTML = `<tr><td class="muted">No services yet.</td></tr>`;
+    return;
+  }
+  for (const s of services) {
+    const endpoints = s.endpoints.map((e) =>
+      `<div class="mono endpoint">${e.port_implied_by_srv ? e.host : e.host + ":" + e.port}
+       <span class="muted" style="font-weight:400">${e.protocol}</span></div>`).join("");
+    const actions = s.config_actions.map((c) =>
+      `<li>Set <code>${escapeHtml(c.key)}=${escapeHtml(c.value)}</code> in <code>${escapeHtml(c.file)}</code></li>`).join("");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(s.name)}</strong>
+          <div class="muted mono">${escapeHtml(s.fqdn)}</div>
+          ${actions ? `<ul class="notes">${actions}</ul>` : ""}</td>
+      <td>${endpoints}</td>
+      <td>
+        <span class="pill ${s.enabled ? "on" : "off"}">${s.enabled ? "enabled" : "disabled"}</span>
+        <span class="pill ${s.dns_synced ? "on" : "warn"}">${s.dns_synced ? "dns ok" : "dns pending"}</span>
+      </td>
+      <td style="text-align:right">
+        <button class="ghost" data-toggle="${s.id}" data-enabled="${s.enabled}">${s.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-del-service="${s.id}">Delete</button>
+      </td>`;
+    body.appendChild(tr);
+  }
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function guard(fn) {
+  try { await fn(); } catch (e) { showError(e.message); }
+}
+
+$("#sign-in").addEventListener("click", () => guard(async () => {
+  token = $("#token").value.trim();
+  await api("/api/status");
+  localStorage.setItem("portal-token", token);
+  $("#login").classList.add("hide");
+  $("#app").classList.remove("hide");
+  await refresh();
+}));
+
+$("#sign-out").addEventListener("click", signOut);
+
+$("#new-token").addEventListener("click", () => guard(async () => {
+  const label = $("#agent-label").value.trim() || "new agent";
+  const out = await api("/api/agents/tokens", { method: "POST", body: JSON.stringify({ label }) });
+  const el = $("#token-out");
+  el.innerHTML = `Run this on the machine, within the hour — it is shown once:<br>
+    <code>portal-agent enroll --gateway &lt;this URL&gt; --token ${escapeHtml(out.token)} --name ${escapeHtml(label)}</code>`;
+  el.classList.remove("hide");
+}));
+
+$("#create").addEventListener("click", () => guard(async () => {
+  const body = {
+    agent_id: $("#f-agent").value,
+    name: $("#f-name").value.trim(),
+    subdomain: $("#f-sub").value.trim(),
+    profiles: selectedProfiles(),
+    enabled_optional_ports: [...document.querySelectorAll('input[name=optional]:checked')].map((b) => b.value),
+    local_port_overrides: {},
+  };
+  if (!body.agent_id) throw new Error("Enroll an agent first.");
+  if (!body.profiles.length) throw new Error("Pick at least one game.");
+  await api("/api/services", { method: "POST", body: JSON.stringify(body) });
+  $("#f-name").value = ""; $("#f-sub").value = "";
+  await refresh();
+}));
+
+document.addEventListener("click", (event) => {
+  const t = event.target;
+  if (t.dataset.delService) {
+    guard(async () => {
+      if (!confirm("Delete this service and retract its DNS?")) return;
+      await api("/api/services/" + t.dataset.delService, { method: "DELETE" });
+      await refresh();
+    });
+  }
+  if (t.dataset.delAgent) {
+    guard(async () => {
+      if (!confirm("Remove this agent? Its services are deleted too.")) return;
+      await api("/api/agents/" + t.dataset.delAgent, { method: "DELETE" });
+      await refresh();
+    });
+  }
+  if (t.dataset.toggle) {
+    guard(async () => {
+      await api("/api/services/" + t.dataset.toggle + "/enabled", {
+        method: "POST",
+        body: JSON.stringify({ enabled: t.dataset.enabled !== "true" }),
+      });
+      await refresh();
+    });
+  }
+});
+
+if (token) {
+  $("#login").classList.add("hide");
+  $("#app").classList.remove("hide");
+  guard(refresh);
+}
+</script>
+</body>
+</html>

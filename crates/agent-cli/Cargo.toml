@@ -1,0 +1,20 @@
+[package]
+name = "portal-agent-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Headless portal agent for Linux and Docker."
+
+[[bin]]
+name = "portal-agent"
+path = "src/main.rs"
+
+[dependencies]
+portal-agent-core.workspace = true
+portal-proto.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

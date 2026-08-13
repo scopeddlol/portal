@@ -1,0 +1,60 @@
+# Copy to deploy/config.toml and edit. Secrets do not belong in this file —
+# the Cloudflare token and admin token are read from the environment. See
+# deploy/README.md.
+
+[gateway]
+# The VPS's public IPv4. This is what DNS points at and what players connect
+# to. Your home IP is never published.
+public_ip = "203.0.113.10"
+
+# The Cloudflare zone this gateway manages. Services become subdomains of it.
+zone = "example.com"
+
+# Bind to localhost and reverse-proxy it, or bind to a private interface. The
+# admin token is the only thing between this and control of your DNS.
+listen = "127.0.0.1:8080"
+
+data_dir = "/var/lib/portal"
+profiles_dir = "/etc/portal/profiles"
+
+# Public ports handed out when a game's own port is already taken. Kept below
+# Linux's ephemeral range (32768-60999) so an allocated port cannot collide
+# with an outbound connection the VPS makes itself.
+edge_port_range_start = 30000
+edge_port_range_end = 32767
+
+# Anything else listening on the public IP. SSH (22), the WireGuard port and
+# the gateway's own listen port are reserved automatically.
+reserved_tcp_ports = [80, 443]
+reserved_udp_ports = []
+
+[tunnel]
+subnet = "10.99.0.0/24"
+gateway_ip = "10.99.0.1"
+interface = "wg0"
+listen_port = 51820
+
+# What agents dial. A hostname survives the VPS changing address; an IP is
+# fine if it will not.
+endpoint = "vps.example.com:51820"
+
+# Generated on first start if absent, and written owner-only.
+private_key_file = "/etc/portal/keys/wg-private.key"
+
+# Agents are behind home NAT and the gateway can never dial them, so the
+# binding is held open from their side.
+persistent_keepalive = 25
+
+[cloudflare]
+# Zone ID from the Cloudflare dashboard's zone overview.
+zone_id = "0123456789abcdef0123456789abcdef"
+
+# Set false to run everything except the DNS writes. Worth doing on a first
+# run against a zone you care about.
+enabled = true
+
+[nftables]
+table = "portal"
+# Set false where something else owns the ruleset; rules are computed and
+# logged but not applied.
+enabled = true

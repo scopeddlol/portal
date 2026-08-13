@@ -1,0 +1,19 @@
+[package]
+name = "portal-agent-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Home-side agent: tunnel client and forwarding engine."
+
+[dependencies]
+portal-proto.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+time.workspace = true
+uuid.workspace = true

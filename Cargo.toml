@@ -4,6 +4,9 @@ resolver = "2"
 # step rather than failing on members that do not exist yet.
 members = [
     "crates/proto",
+    "crates/gateway",
+    "crates/agent-core",
+    "crates/agent-cli",
 ]
 
 [workspace.package]
@@ -13,6 +16,8 @@ rust-version = "1.82"
 license = "MIT"
 
 [workspace.dependencies]
+portal-proto = { path = "crates/proto" }
+portal-agent-core = { path = "crates/agent-core" }
 anyhow = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -26,3 +31,11 @@ rand = "0.8"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+axum = "0.8"
+# Bundled so the VPS image needs no libsqlite3; one fewer thing to get wrong
+# on a box someone rebuilds once a year.
+rusqlite = { version = "0.40", features = ["bundled"] }
+reqwest = { version = "0.13", features = ["json"] }
+toml = "1.0"
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"] }

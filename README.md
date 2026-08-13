@@ -28,8 +28,8 @@ is what players actually connect to, and your home IP is never published.
 │  :24454/udp        │          │  :24454/udp ─┤           │
 │                    │          │              ▼           │
 │ agent              │◀════════▶│ wg0  10.99.0.1           │
-│  boringtun+smoltcp │ WireGuard│ (kernel WireGuard)       │
-│  no TUN driver     │  UDP/51820│                          │
+│  kernel WireGuard  │ WireGuard│ (kernel WireGuard)       │
+│  + TCP/UDP relay   │  UDP/51820│                          │
 │                    │          │ gateway (Rust)           │
 └────────────────────┘          │  web UI, API,            │
                                 │  port allocator,         │
@@ -42,11 +42,15 @@ is an nftables DNAT rule into the tunnel subnet; the kernel does the rest. That
 keeps latency overhead to the WireGuard encryption itself and means a gateway
 restart does not drop anyone's connection.
 
-On the agent side, `boringtun` runs the WireGuard protocol in userspace and
-`smoltcp` provides the TCP/IP stack, so the Windows build needs no TUN driver
-and no administrator rights — it decrypts a flow, then opens an ordinary socket
-to the game server on `127.0.0.1`. A kernel-TUN backend sits behind the same
-trait for the Linux/Docker agent, where it is essentially free.
+On the agent side, the tunnel sits behind a `TunnelBackend` trait and the
+forwarding engine only ever asks it for an address to bind on. Today that is
+kernel WireGuard, which is essentially free on Linux and in Docker: the agent
+accepts on its tunnel address and opens an ordinary socket to the game server
+on `127.0.0.1`.
+
+The intended second backend runs `boringtun` and `smoltcp` in userspace, so a
+Windows build would need no TUN driver and no administrator rights. **That one
+is not written yet** — see [Status](#status).
 
 ## Multiple ports on one domain
 
@@ -78,12 +82,56 @@ port, so a collision must surface as an error instead of an unjoinable server.
 | `crates/agent-core` | Tunnel client and forwarding engine |
 | `crates/agent-cli` | Headless agent (Linux/Docker) |
 | `profiles/` | Game profiles |
-| `deploy/` | Docker Compose for the VPS |
+| `deploy/` | Docker Compose, example config, deployment notes |
+
+## Getting it running
+
+See [`deploy/README.md`](deploy/README.md). The short version: Docker Compose
+on the VPS, an enrollment token from the web UI, one command at home.
 
 ## Status
 
-Early. `crates/proto` is implemented and tested; the gateway and agent are in
-progress.
+Usable end to end on Linux, with one significant gap.
+
+**Built and tested**
+
+- `crates/proto` — shared model, profile schema, WireGuard keys.
+- `crates/gateway` — port allocation, service planning, DNS reconciliation,
+  SQLite storage, HTTP API, web UI, nftables, WireGuard peer management,
+  Cloudflare client.
+- `crates/agent-core` / `crates/agent-cli` — enrollment, assignment polling,
+  and the TCP/UDP forwarding engine, over kernel WireGuard.
+- `deploy/` — Compose files for both halves.
+
+**Not built**
+
+- The userspace tunnel backend. The Windows agent is meant to run `boringtun`
+  and `smoltcp` so it needs no TUN driver and no administrator rights; today
+  the agent uses kernel WireGuard via `wg-quick`, so it wants `CAP_NET_ADMIN`
+  and a Linux host. The `TunnelBackend` trait is the seam that backend slots
+  into — the forwarding engine only ever asks for an address to bind on.
+- `hytale` profile port numbers are placeholders. Fixing them is one YAML file.
+- IPv6. Everything is IPv4 end to end.
+
+Some behaviour worth knowing about, since it is decided rather than obvious:
+
+- A service is given its game's well-known public port when nothing else holds
+  it, so the first Minecraft server on a VPS looks exactly like one with a
+  forwarded port. Later services fall back to `30000-32767` — below Linux's
+  ephemeral range, so an allocated port cannot collide with an outbound
+  connection the VPS makes itself.
+- Java clients follow the `SRV` record, so a relocated edge port stays
+  invisible: players still type `smp.example.com`. Bedrock cannot, which is
+  why its port is fixed and a second Bedrock service is an error.
+- DNS reconciliation only ever touches a service's own name and the records
+  beneath it, so it cannot delete the `MX` records for your mail while
+  tidying up a game server.
+- Return traffic is masqueraded into the tunnel, so the game server sees
+  connections from the tunnel address rather than the player's real IP. Ban
+  lists and IP-based plugins will see one address for everyone.
+- Tokens are stored as hashes, so a copy of `portal.db` yields no working
+  credentials. Each agent's WireGuard peer is allowed exactly its own `/32`,
+  so one compromised home machine cannot source traffic as another.
 
 ## Building
 
@@ -92,3 +140,12 @@ Rust 1.82+. If you would rather not install a toolchain:
 ```bash
 docker run --rm -v "$PWD:/w" -w /w rust:1-slim cargo test --workspace
 ```
+
+The test suite is all offline — no VPS, no Cloudflare account, no root. The
+forwarding tests bind real sockets on loopback and push bytes through them.
+
+`scripts/smoke.sh` goes further and exercises the real binaries end to end:
+it starts a gateway, enrolls an agent against it, publishes a service, and
+pushes bytes through the forwarder to a stand-in game server. It needs root
+for one loopback alias, and skips the parts that require a public IP — DNS
+writes and DNAT.

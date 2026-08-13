@@ -11,4 +11,4 @@ pub mod profile;
 pub mod wg;
 
 pub use model::{Agent, Endpoint, PortMapping, Protocol, Service};
-pub use profile::{Profile, ProfileSet, PortTemplate, SrvSpec};
+pub use profile::{PortTemplate, Profile, ProfileSet, SrvSpec};
