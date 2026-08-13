@@ -7,7 +7,8 @@
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
-const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+const B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::STANDARD;
 const KEY_LEN: usize = 32;
 
 #[derive(Debug, thiserror::Error)]
@@ -79,9 +80,9 @@ pub fn public_from_private(private_b64: &str) -> Result<PublicKey, KeyError> {
         .try_into()
         .map_err(|_| KeyError::Length(bytes.len()))?;
     let secret = x25519_dalek::StaticSecret::from(bytes);
-    Ok(PublicKey(B64.encode(
-        x25519_dalek::PublicKey::from(&secret).to_bytes(),
-    )))
+    Ok(PublicKey(
+        B64.encode(x25519_dalek::PublicKey::from(&secret).to_bytes()),
+    ))
 }
 
 #[cfg(test)]

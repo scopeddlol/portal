@@ -82,8 +82,28 @@ port, so a collision must surface as an error instead of an unjoinable server.
 
 ## Status
 
-Early. `crates/proto` is implemented and tested; the gateway and agent are in
-progress.
+Early, and built from the inside out: the logic that decides things is landing
+before the code that touches the machine, so it can be tested without a VPS.
+
+- `crates/proto` — shared model, profile schema, WireGuard keys. Done.
+- `crates/gateway` — edge port allocation, service planning and DNS
+  reconciliation are implemented and tested. The HTTP API, storage, WireGuard
+  peer management, nftables and the Cloudflare client are not written yet.
+- `crates/agent-*` — not started.
+
+Some behaviour worth knowing about, since it is decided rather than obvious:
+
+- A service is given its game's well-known public port when nothing else holds
+  it, so the first Minecraft server on a VPS looks exactly like one with a
+  forwarded port. Later services fall back to `30000-32767` — below Linux's
+  ephemeral range, so an allocated port cannot collide with an outbound
+  connection the VPS makes itself.
+- Java clients follow the `SRV` record, so a relocated edge port stays
+  invisible: players still type `smp.example.com`. Bedrock cannot, which is
+  why its port is fixed and a second Bedrock service is an error.
+- DNS reconciliation only ever touches a service's own name and the records
+  beneath it, so it cannot delete the `MX` records for your mail while
+  tidying up a game server.
 
 ## Building
 
