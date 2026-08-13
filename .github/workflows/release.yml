@@ -1,0 +1,113 @@
+name: Release containers
+
+# Tag-driven. Pushing `v0.1.0-beta` publishes images tagged `0.1.0-beta`; the
+# `workflow_dispatch` path is for rebuilding a tag without moving it, or for
+# adding architectures after the fact.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to tag the images with, e.g. 0.1.0-beta. Required when dispatching from a branch, since there is no tag to read it from."
+        required: true
+        type: string
+      platforms:
+        description: "Target platforms (arm64 builds under emulation and is slow)"
+        required: false
+        default: "linux/amd64"
+        type: choice
+        options:
+          - "linux/amd64"
+          - "linux/amd64,linux/arm64"
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # Publishing a broken image is worse than publishing nothing, and the whole
+  # suite runs offline in well under a minute.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: portal-gateway
+            target: gateway
+          - image: portal-agent
+            target: agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        if: contains(inputs.platforms, 'arm64')
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          # A beta must never become `latest`. metadata-action would already
+          # skip it for a prerelease tag; saying so explicitly means a later
+          # change to the tag pattern cannot quietly promote one.
+          flavor: latest=false
+          # Two paths in: a `v*` tag supplies the version itself, and a manual
+          # dispatch from a branch has to be told it.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=beta,enable=${{ contains(github.ref_name, 'beta') || contains(inputs.version, 'beta') }}
+            type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.description=Self-hosted game server proxy (${{ matrix.target }})
+            org.opencontainers.image.licenses=MIT
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: ${{ matrix.target }}
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Both images share one Rust build stage, so the second job in the
+          # matrix gets the first one's compile for free.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summarise
+        run: |
+          {
+            echo "### \`${{ matrix.image }}\` published"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

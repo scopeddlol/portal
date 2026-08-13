@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="Friends connect to your domain name, which points at a small rented server, which passes traffic down a private tunnel to your PC at home">
+  <title>How Portal works</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="100%" stop-color="#141C33"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#C084FC"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="260" rx="24" fill="url(#bg)"/>
+
+  <g font-family="Segoe UI, Inter, Roboto, Helvetica Neue, Arial, sans-serif" text-anchor="middle">
+
+    <!-- Friends -->
+    <g>
+      <rect x="48" y="60" width="252" height="140" rx="18" fill="#182034"/>
+      <text x="174" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Your friends</text>
+      <text x="174" y="138" font-size="20" fill="#93A3BC">type your address</text>
+      <text x="174" y="166" font-size="20" fill="#93A3BC">mc.yourdomain.com</text>
+    </g>
+
+    <!-- Solid strokes, not the gradient: a perfectly horizontal path has a
+         zero-height bounding box, which collapses an objectBoundingBox
+         gradient and makes the line disappear. -->
+    <path d="M316 130 H392" stroke="#22D3EE" stroke-width="5" stroke-linecap="round"/>
+    <path d="M390 120 L410 130 L390 140 Z" fill="#22D3EE"/>
+
+    <!-- VPS -->
+    <g>
+      <rect x="422" y="60" width="266" height="140" rx="18" fill="#182034"/>
+      <text x="555" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Rented server</text>
+      <text x="555" y="138" font-size="20" fill="#93A3BC">the public address</text>
+      <text x="555" y="166" font-size="20" fill="#93A3BC">everyone sees</text>
+    </g>
+
+    <path d="M704 130 H792" stroke="#C084FC" stroke-width="5" stroke-linecap="round" stroke-dasharray="13 9"/>
+    <path d="M790 120 L810 130 L790 140 Z" fill="#C084FC"/>
+    <text x="756" y="104" font-size="17" font-weight="600" fill="#A78BFA">encrypted</text>
+    <text x="756" y="170" font-size="17" font-weight="600" fill="#A78BFA">tunnel</text>
+
+    <!-- Home -->
+    <g>
+      <rect x="822" y="60" width="330" height="140" rx="18" fill="#182034"/>
+      <text x="987" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Your PC at home</text>
+      <text x="987" y="138" font-size="20" fill="#93A3BC">runs the game server</text>
+      <text x="987" y="166" font-size="20" fill="#4ADE80">address stays private</text>
+    </g>
+  </g>
+</svg>

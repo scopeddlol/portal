@@ -1,0 +1,12 @@
+# Build artifacts dwarf the source and are rebuilt inside the image anyway.
+target/
+
+# Nothing in here belongs in a build context, and some of it is secret.
+.git/
+.github/
+deploy/config.toml
+deploy/.env
+*.key
+*.pem
+data/
+*.db

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Portal logo">
+  <title>Portal</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="100%" stop-color="#141C33"/>
+    </linearGradient>
+
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="55%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#C084FC"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#818CF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <circle cx="128" cy="128" r="104" fill="url(#glow)"/>
+
+  <path d="M26 128 H62" stroke="#22D3EE" stroke-width="9" stroke-linecap="round" opacity="0.9"/>
+  <circle cx="22" cy="128" r="10" fill="#22D3EE"/>
+  <path d="M194 128 H222" stroke="#C084FC" stroke-width="9" stroke-linecap="round" opacity="0.9"/>
+  <path d="M220 113 L244 128 L220 143 Z" fill="#C084FC"/>
+
+  <circle cx="128" cy="128" r="66" fill="none" stroke="url(#ring)" stroke-width="16"/>
+  <circle cx="128" cy="128" r="40" fill="none" stroke="url(#ring)" stroke-width="6" opacity="0.55"/>
+  <circle cx="128" cy="128" r="17" fill="url(#ring)" opacity="0.30"/>
+</svg>
