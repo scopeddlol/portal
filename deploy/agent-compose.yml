@@ -1,32 +1,26 @@
-# Portal agent — run this at home, next to your game servers.
+# Portal agent — run this at home, next to your servers.
 #
-# Enroll once before starting it, using a token from the gateway's web page:
-#
-#   docker compose -f agent-compose.yml run --rm agent \
-#     enroll --gateway https://portal.example.com --token <token> --name my-pc
+# Two values and you're done. Get them from the control panel: add a node, and
+# it shows you the key.
 #
 #   docker compose -f agent-compose.yml up -d
 #
-# The agent dials out and is never dialled, so no port forward is needed here.
+# The agent keeps no state. It makes a fresh tunnel key every start and tells
+# the gateway about it, so there is nothing to back up and no volume to lose.
+# One agent reaches every machine on the network it sits in, so ten servers
+# need one of these, not ten.
 
 services:
   agent:
     image: ghcr.io/scopeddlol/portal-agent:beta
     container_name: portal-agent
     restart: unless-stopped
-    # Host networking so 127.0.0.1 means the machine your game servers are on.
-    # If they run in other containers, remove this and set a local port
-    # override per service instead.
+    # Host networking so the agent can reach the rest of your LAN.
     network_mode: host
     cap_add:
       # Needed to create the WireGuard interface. This is the requirement the
       # userspace tunnel backend is meant to remove, once it exists.
       - NET_ADMIN
-    volumes:
-      # Holds this agent's identity and key. Lose it and you re-enroll.
-      - agent-data:/var/lib/portal-agent
     environment:
-      - RUST_LOG=portal_agent_core=info
-
-volumes:
-  agent-data:
+      PORTAL_URL: https://portal.yourdomain.com
+      PORTAL_KEY: paste-the-key-from-the-control-panel

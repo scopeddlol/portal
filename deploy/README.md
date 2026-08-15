@@ -92,15 +92,15 @@ be root.
 
 ## Adding a server
 
-In the panel: pick the agent, name it, choose a subdomain, tick the games. A
-Minecraft server with proximity voice is `minecraft-java` + `simple-voice-chat`.
+In the panel: **Add service** (pick the node, choose a subdomain), then **Add
+port** on it (the server's LAN address and port). Repeat per server — one node
+serves as many as you like.
 
 Two things the gateway cannot do for you:
 
-- **Config keys.** Simple Voice Chat has to be told its public address or
-  clients show a red plug icon. The service list shows exactly what to set and
-  where. Setting it is your job — silently rewriting someone's server config is
-  a good way to lose their world settings.
+- **Server-side config.** Some servers must be told their own public address —
+  Simple Voice Chat shows a red plug icon otherwise. Portal will not rewrite
+  your server files.
 - **Firewalls at home.** The agent connects out, so no inbound rule is needed,
   but an outbound block on UDP 51820 will stop it.
 

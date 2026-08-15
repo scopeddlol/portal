@@ -3,7 +3,6 @@
 use portal_gateway::cloudflare::Cloudflare;
 use portal_gateway::http::{self, AppState};
 use portal_gateway::{config::Config, store::Store, token, wgctl};
-use portal_proto::profile::ProfileSet;
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -27,13 +26,6 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("PORTAL_CONFIG").unwrap_or_else(|_| "/etc/portal/config.toml".to_string());
     let config = Arc::new(Config::load(&config_path)?);
     tracing::info!(config = %config_path, zone = %config.gateway.zone, "starting");
-
-    let profiles = Arc::new(ProfileSet::load_dir(&config.gateway.profiles_dir)?);
-    tracing::info!(
-        profiles = profiles.len(),
-        dir = %config.gateway.profiles_dir.display(),
-        "loaded game profiles"
-    );
 
     let store = Arc::new(Store::open(config.database_path())?);
 
@@ -72,7 +64,6 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         store: store.clone(),
-        profiles,
         config: config.clone(),
         admin_token: Arc::new(admin_token),
         cloudflare,
@@ -100,14 +91,16 @@ async fn background_reconcile(state: AppState) {
         match wgctl::show_dump(&state.config.tunnel.interface) {
             Ok(dump) => {
                 let peers = wgctl::parse_dump(&dump);
-                if let Ok(agents) = state.store.list_agents() {
-                    for agent in agents {
-                        let Some(peer) = peers.iter().find(|p| p.public_key == agent.public_key)
-                        else {
+                if let Ok(nodes) = state.store.list_nodes() {
+                    for node in nodes {
+                        let Some(key) = &node.public_key else {
+                            continue;
+                        };
+                        let Some(peer) = peers.iter().find(|p| &p.public_key == key) else {
                             continue;
                         };
                         if let Some(at) = peer.last_handshake {
-                            let _ = state.store.record_handshake(agent.id, at);
+                            let _ = state.store.record_handshake(node.id, at);
                         }
                     }
                 }

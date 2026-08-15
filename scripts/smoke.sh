@@ -1,44 +1,65 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against real binaries, on one machine.
 #
-# Runs a gateway with Cloudflare and nftables disabled, enrolls an agent
-# against it, publishes a service, and pushes bytes through the forwarder to a
-# stand-in game server. What it does not cover is the parts that need a public
-# IP: DNS writes and DNAT.
+# Walks the whole flow: start a gateway, add a node, start an agent with only
+# a URL and a key, add two services pointing at two different addresses on the
+# "LAN", and push bytes through both. What it does not cover is the parts that
+# need a public IP: DNS writes and DNAT.
 #
-# Needs root (or CAP_NET_ADMIN) and iproute2, only for the loopback alias that
-# stands in for the tunnel address WireGuard would normally provide.
+# Needs root (or CAP_NET_ADMIN) and iproute2, only for the loopback aliases
+# standing in for the tunnel address and two LAN machines.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 PORT=18080
 TUNNEL_IP=10.99.0.2
-GAME_PORT=25599
+LAN_A=10.77.0.11
+LAN_B=10.77.0.12
 ADMIN_TOKEN=smoke-test-admin-token
-GATEWAY_PID=""
-AGENT_PID=""
-GAME_PID=""
+GATEWAY_PID=""; AGENT_PID=""; GAME_A_PID=""; GAME_B_PID=""
 
 cleanup() {
-  for pid in "$AGENT_PID" "$GATEWAY_PID" "$GAME_PID"; do
+  for pid in "$AGENT_PID" "$GATEWAY_PID" "$GAME_A_PID" "$GAME_B_PID"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   done
-  ip addr del "$TUNNEL_IP/32" dev lo 2>/dev/null || true
+  for ip in "$TUNNEL_IP" "$LAN_A" "$LAN_B"; do
+    ip addr del "$ip/32" dev lo 2>/dev/null || true
+  done
   rm -rf "$WORK"
 }
 trap cleanup EXIT
 
 say() { printf '\n=== %s\n' "$1"; }
 fail() { printf '!!! %s\n' "$1" >&2; exit 1; }
+api() { curl -sf -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' "$@"; }
+jget() { python3 -c "import sys,json;print(json.load(sys.stdin)$1)"; }
 
 say "building"
 cargo build --quiet --bin portal-gateway --bin portal-agent
 
-# The agent binds listeners on its tunnel address, so that address has to
-# exist. On a real agent WireGuard provides it.
-ip addr add "$TUNNEL_IP/32" dev lo 2>/dev/null || \
-  fail "could not add $TUNNEL_IP to lo (need root?)"
+# The agent binds on its tunnel address; the two "LAN machines" stand in for
+# other boxes on the home network. WireGuard and a real LAN provide these.
+for ip in "$TUNNEL_IP" "$LAN_A" "$LAN_B"; do
+  ip addr add "$ip/32" dev lo 2>/dev/null || fail "could not add $ip to lo (need root?)"
+done
+
+# A stand-in game server on each "machine", echoing whatever it is sent.
+start_echo() {
+  python3 - "$1" > /dev/null 2>&1 <<'PY' &
+import socketserver, sys
+class Echo(socketserver.BaseRequestHandler):
+    def handle(self):
+        while True:
+            data = self.request.recv(1024)
+            if not data:
+                return
+            self.request.sendall(data)
+socketserver.ThreadingTCPServer.allow_reuse_address = True
+socketserver.ThreadingTCPServer((sys.argv[1], 25565), Echo).serve_forever()
+PY
+  echo $!
+}
 
 cat > "$WORK/config.toml" <<EOF
 [gateway]
@@ -46,11 +67,9 @@ public_ip = "203.0.113.10"
 zone = "example.test"
 listen = "127.0.0.1:$PORT"
 data_dir = "$WORK/data"
-profiles_dir = "$ROOT/profiles"
 
 [tunnel]
 endpoint = "127.0.0.1:51820"
-private_key_file = "$WORK/wg.key"
 
 [cloudflare]
 zone_id = "smoke"
@@ -65,106 +84,102 @@ PORTAL_CONFIG="$WORK/config.toml" PORTAL_ADMIN_TOKEN="$ADMIN_TOKEN" \
   RUST_LOG=portal_gateway=info "$ROOT/target/debug/portal-gateway" \
   > "$WORK/gateway.log" 2>&1 &
 GATEWAY_PID=$!
-
 for _ in $(seq 1 50); do
-  curl -sf -H "Authorization: Bearer $ADMIN_TOKEN" \
-    "http://127.0.0.1:$PORT/api/status" > /dev/null && break
+  api "http://127.0.0.1:$PORT/api/status" > /dev/null 2>&1 && break
   sleep 0.2
 done
-curl -sf -H "Authorization: Bearer $ADMIN_TOKEN" "http://127.0.0.1:$PORT/api/status" \
-  > /dev/null || { cat "$WORK/gateway.log"; fail "gateway did not come up"; }
+api "http://127.0.0.1:$PORT/api/status" > /dev/null \
+  || { cat "$WORK/gateway.log"; fail "gateway did not come up"; }
 
 say "rejecting a bad admin token"
 code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer wrong" \
   "http://127.0.0.1:$PORT/api/status")
 [ "$code" = "401" ] || fail "expected 401 for a bad token, got $code"
 
-say "enrolling an agent"
-TOKEN=$(curl -sf -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' -d '{"label":"smoke"}' \
-  "http://127.0.0.1:$PORT/api/agents/tokens" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-[ -n "$TOKEN" ] || fail "no enrollment token issued"
+say "adding a node"
+NODE=$(api -X POST -d '{"name":"basement-pc"}' "http://127.0.0.1:$PORT/api/nodes")
+NODE_KEY=$(echo "$NODE" | jget "['key']")
+[ -n "$NODE_KEY" ] || fail "no node key issued"
 
-"$ROOT/target/debug/portal-agent" --state "$WORK/agent.json" \
-  enroll --gateway "http://127.0.0.1:$PORT" --token "$TOKEN" --name smoke-box
+say "starting the agent with only a URL and a key"
+PORTAL_URL="http://127.0.0.1:$PORT" PORTAL_KEY="$NODE_KEY" PORTAL_NO_TUNNEL=1 \
+  RUST_LOG=portal_agent_core=info "$ROOT/target/debug/portal-agent" \
+  > "$WORK/agent.log" 2>&1 &
+AGENT_PID=$!
+for _ in $(seq 1 40); do
+  grep -q "tunnel up" "$WORK/agent.log" && break
+  sleep 0.25
+done
+grep -q "tunnel up" "$WORK/agent.log" \
+  || { cat "$WORK/agent.log"; fail "the agent never registered"; }
 
-say "refusing to reuse the enrollment token"
-if "$ROOT/target/debug/portal-agent" --state "$WORK/agent2.json" \
-     enroll --gateway "http://127.0.0.1:$PORT" --token "$TOKEN" --name dupe 2>/dev/null; then
-  fail "a single-use token was accepted twice"
-fi
+say "starting two game servers on two addresses"
+GAME_A_PID=$(start_echo "$LAN_A")
+GAME_B_PID=$(start_echo "$LAN_B")
+for ip in "$LAN_A" "$LAN_B"; do
+  for _ in $(seq 1 40); do
+    (exec 3<>/dev/tcp/"$ip"/25565) 2>/dev/null && break
+    sleep 0.25
+  done
+  (exec 3<>/dev/tcp/"$ip"/25565) 2>/dev/null || fail "stand-in server on $ip did not start"
+done
 
-AGENT_ID=$(curl -sf -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "http://127.0.0.1:$PORT/api/agents" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+say "publishing both through one node"
+NODE_ID=$(echo "$NODE" | jget "['id']")
+for pair in "mc1:$LAN_A" "mc2:$LAN_B"; do
+  sub="${pair%%:*}"; host="${pair##*:}"
+  SVC=$(api -X POST -d "{\"node_id\":\"$NODE_ID\",\"name\":\"$sub\",\"subdomain\":\"$sub\"}" \
+    "http://127.0.0.1:$PORT/api/services")
+  SID=$(echo "$SVC" | jget "['id']")
+  api -X POST -d "{\"protocol\":\"tcp\",\"local_host\":\"$host\",\"local_port\":25565,\"minecraft_srv\":true}" \
+    "http://127.0.0.1:$PORT/api/services/$SID/ports" > /dev/null
+done
 
-say "creating a service"
-curl -sf -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{\"agent_id\":\"$AGENT_ID\",\"name\":\"Smoke\",\"subdomain\":\"mc\",
-       \"profiles\":[\"minecraft-java\"],
-       \"local_port_overrides\":{\"minecraft-java/game\":$GAME_PORT}}" \
-  "http://127.0.0.1:$PORT/api/services" > "$WORK/service.json"
-grep -q '"fqdn":"mc.example.test"' "$WORK/service.json" || \
-  { cat "$WORK/service.json"; fail "service was not created as expected"; }
+api "http://127.0.0.1:$PORT/api/services" | python3 -c "
+import sys, json
+for s in json.load(sys.stdin):
+    for p in s['ports']:
+        print(f\"    {p['connect']:22} -> {p['local_host']}:{p['local_port']}\")"
 
 say "rejecting a duplicate subdomain"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"agent_id\":\"$AGENT_ID\",\"name\":\"Dupe\",\"subdomain\":\"mc\",\"profiles\":[\"minecraft-java\"]}" \
+  -d "{\"node_id\":\"$NODE_ID\",\"name\":\"dupe\",\"subdomain\":\"mc1\"}" \
   "http://127.0.0.1:$PORT/api/services")
 [ "$code" = "409" ] || fail "expected 409 for a duplicate subdomain, got $code"
 
-say "starting a stand-in game server on $GAME_PORT"
-# Echoes whatever it is sent, which is all the forwarder needs to prove itself.
-python3 - "$GAME_PORT" > "$WORK/game.log" 2>&1 <<'PY' &
-import socketserver, sys
-class Echo(socketserver.BaseRequestHandler):
-    def handle(self):
-        while True:
-            data = self.request.recv(1024)
-            if not data:
-                return
-            self.request.sendall(data)
-socketserver.ThreadingTCPServer.allow_reuse_address = True
-socketserver.ThreadingTCPServer(("127.0.0.1", int(sys.argv[1])), Echo).serve_forever()
-PY
-GAME_PID=$!
-
-for _ in $(seq 1 40); do
-  (exec 3<>/dev/tcp/127.0.0.1/"$GAME_PORT") 2>/dev/null && break
-  sleep 0.25
-done
-(exec 3<>/dev/tcp/127.0.0.1/"$GAME_PORT") 2>/dev/null || \
-  { cat "$WORK/game.log"; fail "the stand-in game server did not start"; }
-
-say "running the agent"
-"$ROOT/target/debug/portal-agent" --state "$WORK/agent.json" run --no-tunnel \
-  > "$WORK/agent.log" 2>&1 &
-AGENT_PID=$!
-
+say "pushing bytes to both servers through the one agent"
+# Wait for the agent's next poll to pick the new forwards up.
 for _ in $(seq 1 60); do
-  grep -q "assignment applied" "$WORK/agent.log" && break
+  grep -q "serving 2 port" "$WORK/agent.log" && break
   sleep 0.5
 done
-grep -q "assignment applied" "$WORK/agent.log" || \
-  { cat "$WORK/agent.log"; fail "the agent never applied its assignment"; }
+grep -q "serving 2 port" "$WORK/agent.log" \
+  || { cat "$WORK/agent.log"; fail "the agent never picked up both forwards"; }
 
-say "pushing bytes through the tunnel address to the game server"
-# 25565 is the edge port the gateway allocated, and the forwarder listens on
-# it inside the tunnel; the game server is on $GAME_PORT via the override.
-reply=$(python3 - "$TUNNEL_IP" <<'PY'
+EDGE_PORTS=$(api "http://127.0.0.1:$PORT/api/services" | python3 -c "
+import sys, json
+print(' '.join(str(p['edge_port']) for s in json.load(sys.stdin) for p in s['ports']))")
+
+i=0
+for port in $EDGE_PORTS; do
+  i=$((i + 1))
+  reply=$(python3 - "$TUNNEL_IP" "$port" "hello-from-$i" <<'PY'
 import socket, sys, time
+host, port, msg = sys.argv[1], int(sys.argv[2]), sys.argv[3].encode()
 for _ in range(40):
     try:
-        s = socket.create_connection((sys.argv[1], 25565), timeout=2)
-        s.sendall(b"hello from a player")
+        s = socket.create_connection((host, port), timeout=2)
+        s.sendall(msg)
         print(s.recv(64).decode())
         break
     except OSError:
         time.sleep(0.25)
 PY
 )
-[ "$reply" = "hello from a player" ] || \
-  { cat "$WORK/agent.log"; fail "no echo through the forwarder (got '$reply')"; }
+  [ "$reply" = "hello-from-$i" ] \
+    || { cat "$WORK/agent.log"; fail "no echo through edge port $port (got '$reply')"; }
+  printf '    edge %s reached its server\n' "$port"
+done
 
-say "PASS — gateway, enrollment, service creation and forwarding all work"
+say "PASS — one node, two machines on its network, both reachable"

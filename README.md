@@ -27,7 +27,7 @@ Portal removes both. You rent a small server somewhere (about **$5 a month**), a
   <img src="assets/how-it-works.svg" alt="Friends connect to your domain, which points at a small rented server, which passes traffic down an encrypted tunnel to your PC at home" width="820">
 </p>
 
-Portal also handles the fiddly parts for you: it picks the port numbers, writes the DNS records so your address just works, and knows that a Minecraft server with voice chat needs two ports rather than one.
+Portal handles the fiddly parts: it picks the public port numbers so servers don't clash, writes the DNS records so your address just works, and lets one small agent cover every machine on your home network.
 
 ## What you need
 
@@ -134,14 +134,12 @@ Make sure ports **80**, **443** and **UDP 51820** are open on your server's fire
 
 Go to **https://portal.yourdomain.com** and sign in with your `PORTAL_ADMIN_TOKEN`.
 
-Click **Create enrollment token** and copy what it gives you — it's shown once and lasts an hour.
-
 ### 3. On your home PC
 
-One file:
+In the control panel, click **Add node** and give it a name. You get a key. One file:
 
 <details open>
-<summary><b>agent-compose.yml</b></summary>
+<summary><b>agent-compose.yml</b> — paste the key on the last line</summary>
 
 ```yaml
 services:
@@ -151,42 +149,44 @@ services:
     restart: unless-stopped
     network_mode: host
     cap_add: [NET_ADMIN]
-    volumes:
-      - agent-data:/var/lib/portal-agent
-
-volumes:
-  agent-data:
+    environment:
+      PORTAL_URL: https://portal.yourdomain.com
+      PORTAL_KEY: paste-your-key-here
 ```
 </details>
 
-Register it once, then leave it running:
-
 ```bash
-docker compose -f agent-compose.yml run --rm agent \
-  enroll --gateway https://portal.yourdomain.com --token PASTE_TOKEN_HERE --name my-pc
-
 docker compose -f agent-compose.yml up -d
 ```
 
-### 4. Add your game server
+That's the whole setup at home. The agent keeps no state — no volume, nothing
+to back up — and **one agent covers your whole network**, so ten servers on ten
+machines still need only this one container.
 
-Back in the control panel: pick your PC, name the server, choose an address like `mc`, tick the games it runs, and press **Create**.
+### 4. Point a subdomain at a server
 
-Your friends can now connect to `mc.yourdomain.com`.
+Two clicks and a form, twice:
+
+1. **Add service** — pick the node, type a subdomain like `mc`. Submit.
+2. **Add port** on that service — type the server's address on your network
+   (`192.168.1.50`) and its port (`25565`). For Minecraft Java, tick the box so
+   players don't have to type a port.
+
+Repeat for each server. They can all live on different machines, and they can
+all use port 25565 locally — Portal gives each one its own public port and
+hides it behind the subdomain.
 
 > [!NOTE]
 > The images above land in the registry with the first published release. Until then — or if you'd rather build it yourself — see [building from source](deploy/README.md#not-using-the-published-images).
 
-## Games it knows about
+## What you can publish
 
 | Game | Notes |
 | --- | --- |
-| 🟩 **Minecraft (Java)** | Friends type just `mc.yourdomain.com`, no port number needed |
-| 🟦 **Minecraft (Bedrock)** | Consoles and phones can join too |
-| 🎙️ **Simple Voice Chat** | Add-on for Java — tick it alongside Minecraft |
-| 🧪 **Hytale** | Placeholder — the port numbers are guesses until the game exists |
-
-Adding another game is one small text file, not a code change. See [`profiles/`](profiles/).
+| 🟩 **Minecraft (Java)** | Tick the box and friends type just `mc.yourdomain.com` — no port |
+| 🟦 **Minecraft (Bedrock)** | Works too; Bedrock ignores SRV, so players use `host:port` |
+| 🎙️ **Voice chat** | Add its UDP port to the same subdomain |
+| 🎮 **Anything else** | Any TCP or UDP port. Portal does not care what is behind it |
 
 ## Good to know
 
@@ -195,13 +195,12 @@ This is a **beta**. It works, but a few things are worth knowing before you rely
 - **Your home PC needs Linux or Docker.** A native Windows version is planned but not built yet.
 - **Your game server sees one address for everyone.** Player IP addresses arrive looking identical, so IP bans and IP-based plugins won't behave as you'd expect.
 - **IPv4 only** for now.
-- **You still set your own game config.** If you use voice chat, the web page tells you exactly which line to change and where — Portal won't edit your server files behind your back.
+- **You still set your own game config.** Some servers (voice chat especially) need to be told their public address. Portal won't edit your server files behind your back.
 
 ## Learn more
 
 - 📘 [**Full setup and troubleshooting**](deploy/README.md) — building from source, running without Docker, checking it works
 - 🔧 [**How it works inside**](docs/how-it-works.md) — the architecture, why Cloudflare can't carry game traffic, and the design decisions
-- 🧩 [**Game profiles**](profiles/) — add support for another game
 
 ## Licence
 

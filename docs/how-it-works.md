@@ -43,33 +43,43 @@ restart does not drop anyone's connection.
 On the agent side, the tunnel sits behind a `TunnelBackend` trait and the
 forwarding engine only ever asks it for an address to bind on. Today that is
 kernel WireGuard, which is essentially free on Linux and in Docker: the agent
-accepts on its tunnel address and opens an ordinary socket to the game server
-on `127.0.0.1`.
+accepts on its tunnel address and opens an ordinary socket to whichever
+address on its network the mapping names.
 
 The intended second backend runs `boringtun` and `smoltcp` in userspace, so a
 Windows build would need no TUN driver and no administrator rights. **That one
 is not written yet.**
 
-## Multiple ports on one domain
+## The model
 
-The model is one `Service` (= one subdomain) owning many `PortMapping`s:
+Three things:
 
 ```
-mc.example.com  →  A 203.0.113.10          (DNS-only)
-  ├─ tcp 25565  →  _minecraft._tcp SRV     (Java clients need no port)
-  └─ udp 24454  →  advertised via voice_host
+Node (a machine running the agent)
+ └── Service (one subdomain)
+      └── PortMapping (public port -> address:port behind the node)
 ```
 
-Which ports a service needs comes from **composable game profiles** — YAML in
-[`profiles/`](../profiles/), not code. A Minecraft server with proximity voice
-selects `minecraft-java` and `simple-voice-chat`, and the union of their port
-templates is allocated. Adding a game is a new YAML file.
+A mapping names its own `local_host`, which is the piece that matters most in
+practice: the agent bridges to any address it can reach, so one container
+fronts a whole LAN. Ten Minecraft servers on ten different machines need one
+agent, not ten.
 
-Edge ports are allocated per service and do not have to equal the local port,
-because two servers on one machine can both want 25565 and only one can have it
-on the public IP. Profiles say when that is not allowed: Bedrock's UDP 19132 is
-marked `edge_port_fixed`, because console clients often cannot enter a custom
-port, so a collision must surface as an error instead of an unjoinable server.
+```
+mc.example.com  →  A 203.0.113.10                    (DNS-only)
+  ├─ tcp 25565  →  _minecraft._tcp SRV  →  192.168.1.50:25565
+  └─ udp 24454  →                          192.168.1.50:24454
+```
+
+Edge ports are allocated and need not equal the local port, because ten servers
+can all sensibly listen on 25565 on their own machines while only one of them
+can hold 25565 on the public IP. The SRV record is what makes that invisible:
+Java clients look it up and connect to the bare hostname regardless of which
+public port the service actually got. Games that ignore SRV (Bedrock among
+them) show the port to the player instead.
+
+There is no game-specific configuration anywhere in the system. A port is a
+port.
 
 ## Decisions worth knowing
 
@@ -79,8 +89,8 @@ port, so a collision must surface as an error instead of an unjoinable server.
   ephemeral range, so an allocated port cannot collide with an outbound
   connection the VPS makes itself.
 - Java clients follow the `SRV` record, so a relocated edge port stays
-  invisible: players still type `smp.example.com`. Bedrock cannot, which is
-  why its port is fixed and a second Bedrock service is an error.
+  invisible: players still type `smp.example.com`. Games that ignore SRV show
+  the allocated port instead, which the UI displays verbatim.
 - DNS reconciliation only ever touches a service's own name and the records
   beneath it, so it cannot delete the `MX` records for your mail while
   tidying up a game server.
@@ -98,11 +108,10 @@ port, so a collision must surface as an error instead of an unjoinable server.
 
 | Path | What |
 | --- | --- |
-| `crates/proto` | Shared model, wire types, profile schema |
+| `crates/proto` | Shared model and wire types |
 | `crates/gateway` | VPS side: API, web UI, WireGuard peers, nftables, Cloudflare |
 | `crates/agent-core` | Tunnel client and forwarding engine |
 | `crates/agent-cli` | Headless agent (Linux/Docker) |
-| `profiles/` | Game profiles |
 | `deploy/` | Docker Compose, example config, deployment notes |
 | `scripts/` | End-to-end smoke test |
 
@@ -110,12 +119,11 @@ port, so a collision must surface as an error instead of an unjoinable server.
 
 **Built and tested**
 
-- `crates/proto` — shared model, profile schema, WireGuard keys.
-- `crates/gateway` — port allocation, service planning, DNS reconciliation,
-  SQLite storage, HTTP API, web UI, nftables, WireGuard peer management,
-  Cloudflare client.
-- `crates/agent-core` / `crates/agent-cli` — enrollment, assignment polling,
-  and the TCP/UDP forwarding engine, over kernel WireGuard.
+- `crates/proto` — shared model and WireGuard keys.
+- `crates/gateway` — port allocation, DNS reconciliation, SQLite storage,
+  HTTP API, web UI, nftables, WireGuard peer management, Cloudflare client.
+- `crates/agent-core` / `crates/agent-cli` — stateless registration, assignment
+  polling, and the TCP/UDP forwarding engine, over kernel WireGuard.
 - `deploy/` — Compose files for both halves.
 
 **Not built**
@@ -124,7 +132,6 @@ port, so a collision must surface as an error instead of an unjoinable server.
   and `smoltcp` so it needs no TUN driver and no administrator rights; today
   the agent uses kernel WireGuard via `wg-quick`, so it wants `CAP_NET_ADMIN`
   and a Linux host.
-- `hytale` profile port numbers are placeholders. Fixing them is one YAML file.
 - IPv6. Everything is IPv4 end to end.
 
 ## Building and testing
@@ -139,7 +146,8 @@ The test suite is all offline — no VPS, no Cloudflare account, no root. The
 forwarding tests bind real sockets on loopback and push bytes through them.
 
 `scripts/smoke.sh` goes further and exercises the real binaries end to end: it
-starts a gateway, enrolls an agent against it, publishes a service, and pushes
-bytes through the forwarder to a stand-in game server. It needs root for one
-loopback alias, and skips the parts that require a public IP — DNS writes and
+starts a gateway, adds a node, runs an agent with nothing but a URL and a key,
+publishes two services pointing at two different addresses, and pushes bytes
+through both. It needs root for the loopback aliases standing in for the tunnel
+and the LAN, and skips the parts that require a public IP — DNS writes and
 DNAT.

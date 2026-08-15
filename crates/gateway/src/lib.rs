@@ -36,5 +36,5 @@ pub use alloc::{AllocError, EdgePortRange, PortAllocator, PortRequest};
 pub use config::Config;
 pub use dns::{DnsPlan, DnsRecord, ExistingRecord};
 pub use net::Ipv4Net;
-pub use plan::{PlanError, Planner, ServicePlan};
+pub use plan::{describe_service, PlanError, ServiceDescription};
 pub use store::Store;

@@ -92,7 +92,6 @@ mod tests {
             tunnel_ip: Ipv4Addr::new(10, 99, 0, last_octet),
             protocol,
             edge_port,
-            local_port: 25565,
             service_id: Uuid::nil(),
         }
     }

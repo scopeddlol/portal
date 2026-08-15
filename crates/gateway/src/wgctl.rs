@@ -9,7 +9,7 @@
 //! here has an endpoint. The agent connects out and the binding is held open
 //! from its side by persistent-keepalive.
 
-use portal_proto::model::Agent;
+use portal_proto::model::Node;
 use std::fmt::Write as _;
 use std::io;
 use std::net::Ipv4Addr;
@@ -31,22 +31,27 @@ pub struct InterfaceConfig {
 /// Written as a file rather than a series of `wg set` calls so that the
 /// interface can be brought up by hand from the same content when something
 /// has gone wrong and the gateway is not the thing you want in the loop.
-pub fn render_config(iface: &InterfaceConfig, agents: &[Agent]) -> String {
+pub fn render_config(iface: &InterfaceConfig, nodes: &[Node]) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "# Managed by portal. Edits here are overwritten.");
     let _ = writeln!(out, "[Interface]");
     let _ = writeln!(out, "PrivateKey = {}", iface.private_key);
     let _ = writeln!(out, "ListenPort = {}", iface.listen_port);
     let _ = writeln!(out, "Address = {}/{}", iface.address, iface.prefix_len);
-    for agent in agents {
+    for node in nodes {
         let _ = writeln!(out);
-        let _ = writeln!(out, "# {}", agent.name);
+        let _ = writeln!(out, "# {}", node.name);
         let _ = writeln!(out, "[Peer]");
-        let _ = writeln!(out, "PublicKey = {}", agent.public_key);
+        let Some(public_key) = &node.public_key else {
+            // The node exists but its agent has never started. Nothing to peer
+            // with yet; it appears here the moment it registers.
+            continue;
+        };
+        let _ = writeln!(out, "PublicKey = {public_key}");
         // A single address, not the subnet: this is the cryptokey routing
         // table, and a wider allowed-ips would let any agent impersonate any
         // other one.
-        let _ = writeln!(out, "AllowedIPs = {}/32", agent.tunnel_ip);
+        let _ = writeln!(out, "AllowedIPs = {}/32", node.tunnel_ip);
     }
     out
 }
@@ -168,11 +173,11 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
-    fn agent(name: &str, key: &str, last_octet: u8) -> Agent {
-        Agent {
+    fn node(name: &str, key: &str, last_octet: u8) -> Node {
+        Node {
             id: Uuid::new_v4(),
             name: name.to_string(),
-            public_key: key.to_string(),
+            public_key: Some(key.to_string()),
             tunnel_ip: Ipv4Addr::new(10, 99, 0, last_octet),
             last_handshake: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
@@ -189,10 +194,10 @@ mod tests {
     }
 
     #[test]
-    fn every_agent_becomes_a_peer() {
+    fn every_registered_node_becomes_a_peer() {
         let config = render_config(
             &iface(),
-            &[agent("basement", "KEY-A", 2), agent("attic", "KEY-B", 3)],
+            &[node("basement", "KEY-A", 2), node("attic", "KEY-B", 3)],
         );
         assert_eq!(config.matches("[Peer]").count(), 2);
         assert!(config.contains("PublicKey = KEY-A"));
@@ -201,7 +206,7 @@ mod tests {
 
     #[test]
     fn a_peer_is_allowed_exactly_one_address() {
-        let config = render_config(&iface(), &[agent("basement", "KEY-A", 2)]);
+        let config = render_config(&iface(), &[node("basement", "KEY-A", 2)]);
         assert!(
             config.contains("AllowedIPs = 10.99.0.2/32"),
             "a wider range would let one agent impersonate another"
@@ -211,7 +216,7 @@ mod tests {
 
     #[test]
     fn peers_have_no_endpoint_because_the_gateway_never_dials_home() {
-        let config = render_config(&iface(), &[agent("basement", "KEY-A", 2)]);
+        let config = render_config(&iface(), &[node("basement", "KEY-A", 2)]);
         assert!(!config.contains("Endpoint"));
     }
 

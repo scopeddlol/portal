@@ -6,258 +6,412 @@
 <title>Portal</title>
 <style>
   :root {
-    --bg: #10131a; --panel: #171b24; --line: #262c38; --text: #e6e9ef;
-    --muted: #9aa3b2; --accent: #6ea8fe; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    --bg:#0b1020; --panel:#141b2e; --panel-2:#1b2440; --line:#26324f;
+    --text:#eef1f7; --muted:#93a3bc; --accent:#6ea8fe; --accent-ink:#08132a;
+    --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --radius:12px;
   }
   @media (prefers-color-scheme: light) {
     :root {
-      --bg: #f6f7f9; --panel: #fff; --line: #e2e5ea; --text: #1a1d24;
-      --muted: #667085; --accent: #2563eb; --ok: #16a34a; --warn: #b45309; --bad: #dc2626;
+      --bg:#f5f7fa; --panel:#ffffff; --panel-2:#f0f3f8; --line:#dfe4ec;
+      --text:#131725; --muted:#5d6b85; --accent:#2563eb; --accent-ink:#ffffff;
+      --ok:#15803d; --warn:#b45309; --bad:#dc2626;
     }
   }
-  * { box-sizing: border-box; }
+  * { box-sizing:border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  h1,h2,h3 { margin:0; font-weight:650; letter-spacing:-0.01em; }
+  h2 { font-size:17px; }
+  h3 { font-size:15px; }
+  .muted { color:var(--muted); }
+  .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+
   header {
-    padding: 18px 24px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    position:sticky; top:0; z-index:5; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:14px 22px;
+    display:flex; align-items:center; gap:14px;
   }
-  h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
-  main { max-width: 960px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
-  .muted { color: var(--muted); }
-  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  tr:last-child td { border-bottom: none; }
-  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px; }
+  .dot-logo {
+    width:22px; height:22px; border-radius:50%;
+    border:3px solid var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  main { max-width:920px; margin:0 auto; padding:26px 22px 80px; }
+  section { margin-bottom:34px; }
+  .section-head { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .section-head p { margin:2px 0 0; font-size:13.5px; }
+  .spacer { flex:1; }
+
   button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 7px;
-    padding: 8px 13px; font-size: 14px; cursor: pointer;
+    font:inherit; font-size:14px; font-weight:550; cursor:pointer;
+    background:var(--accent); color:var(--accent-ink);
+    border:0; border-radius:9px; padding:9px 15px;
   }
-  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
-  button.danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:hover { filter:brightness(1.08); }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.link { background:none; border:0; color:var(--accent); padding:4px 6px; font-weight:550; }
+  button.danger { background:none; border:0; color:var(--bad); padding:4px 6px; font-weight:550; }
+  button.small { padding:6px 11px; font-size:13px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+
   input, select {
-    background: var(--bg); color: var(--text); border: 1px solid var(--line);
-    border-radius: 7px; padding: 8px 10px; font-size: 14px; font-family: inherit;
+    font:inherit; font-size:14px; width:100%;
+    background:var(--bg); color:var(--text);
+    border:1px solid var(--line); border-radius:9px; padding:9px 11px;
   }
-  label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }
-  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
-  .pill.on { color: var(--ok); border-color: currentColor; }
-  .pill.off { color: var(--muted); }
-  .pill.warn { color: var(--warn); border-color: currentColor; }
-  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-  .banner { padding: 11px 14px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 14px; }
-  .banner.bad { color: var(--bad); border-color: currentColor; }
-  .banner.ok { color: var(--ok); border-color: currentColor; }
-  .checks { display: grid; gap: 6px; margin-top: 6px; }
-  .checks label { grid-template-columns: auto 1fr; align-items: center; color: var(--text); }
-  .hide { display: none; }
-  .endpoint { font-weight: 600; }
-  ul.notes { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  input:focus, select:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  label { display:block; font-size:12.5px; font-weight:550; color:var(--muted); margin-bottom:5px; }
+  .field { margin-bottom:13px; }
+  .row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+  .row > .field { flex:1; min-width:120px; margin-bottom:0; }
+  .check { display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--text); }
+  .check input { width:auto; }
+
+  .card {
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius); padding:16px 18px;
+  }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px; }
+  .stack { display:flex; flex-direction:column; gap:12px; }
+
+  .pill {
+    font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:999px;
+    border:1px solid currentColor; white-space:nowrap;
+  }
+  .pill.on { color:var(--ok); }
+  .pill.off { color:var(--muted); border-color:var(--line); }
+  .pill.warn { color:var(--warn); }
+
+  .svc-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .svc-name { font-weight:650; }
+  .connect {
+    display:inline-flex; align-items:center; gap:8px;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+    padding:5px 10px; font-size:13.5px;
+  }
+  .ports { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
+  .port {
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:9px 0; border-bottom:1px solid var(--line);
+  }
+  .port:last-child { border-bottom:0; }
+  .arrow { color:var(--muted); }
+
+  .empty {
+    border:1px dashed var(--line); border-radius:var(--radius);
+    padding:26px; text-align:center; color:var(--muted); font-size:14px;
+  }
+
+  dialog {
+    border:1px solid var(--line); border-radius:14px; padding:0;
+    background:var(--panel); color:var(--text); max-width:520px; width:calc(100% - 32px);
+  }
+  dialog::backdrop { background:rgba(3,7,18,.6); }
+  .dlg-head { padding:18px 20px 0; }
+  .dlg-body { padding:16px 20px; }
+  .dlg-foot { padding:14px 20px 18px; display:flex; gap:10px; justify-content:flex-end; }
+
+  pre {
+    background:var(--bg); border:1px solid var(--line); border-radius:9px;
+    padding:12px; overflow-x:auto; font-size:12.5px; margin:0;
+  }
+  .banner { border-radius:9px; padding:11px 13px; font-size:13.5px; margin-bottom:14px; border:1px solid; }
+  .banner.bad { color:var(--bad); }
+  .banner.ok { color:var(--ok); }
+  .hide { display:none !important; }
+  .center { min-height:70vh; display:grid; place-items:center; }
+  .login { width:min(380px, 100%); }
 </style>
 </head>
 <body>
-<header>
-  <h1>Portal</h1>
-  <span class="muted mono" id="status-line">not connected</span>
-  <span style="flex:1"></span>
-  <button class="ghost" id="sign-out">Sign out</button>
+
+<header class="hide" id="bar">
+  <div class="brand"><span class="dot-logo"></span> Portal</div>
+  <span class="muted mono" id="zone" style="font-size:13px"></span>
+  <span class="spacer"></span>
+  <button class="ghost small" id="sign-out">Sign out</button>
 </header>
 
 <main>
   <div id="error" class="banner bad hide"></div>
 
-  <section class="panel" id="login">
-    <h2>Admin token</h2>
-    <p class="muted">Printed in the gateway's log on first start, or set with <code>PORTAL_ADMIN_TOKEN</code>.</p>
-    <div class="row">
-      <input type="password" id="token" placeholder="token" style="flex:1;min-width:240px">
-      <button id="sign-in">Sign in</button>
+  <!-- Sign in -->
+  <div id="login" class="center">
+    <div class="card login">
+      <div class="brand" style="margin-bottom:6px"><span class="dot-logo"></span> Portal</div>
+      <p class="muted" style="margin:0 0 16px; font-size:13.5px">Sign in with your admin token.</p>
+      <div class="field"><input type="password" id="token" placeholder="Admin token" autofocus></div>
+      <button id="sign-in" style="width:100%">Sign in</button>
     </div>
-  </section>
+  </div>
 
+  <!-- App -->
   <div id="app" class="hide">
-    <section class="panel">
-      <h2>Agents</h2>
-      <table id="agents"><tbody></tbody></table>
-      <div class="row" style="margin-top:14px">
-        <input id="agent-label" placeholder="new machine, e.g. basement-box">
-        <button id="new-token">Create enrollment token</button>
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>Nodes</h2>
+          <p class="muted">Machines running the agent. One node can reach every server on its network.</p>
+        </div>
+        <span class="spacer"></span>
+        <button id="add-node">Add node</button>
       </div>
-      <div id="token-out" class="banner ok hide"></div>
+      <div id="nodes" class="cards"></div>
     </section>
 
-    <section class="panel">
-      <h2>Services</h2>
-      <table id="services"><tbody></tbody></table>
-    </section>
-
-    <section class="panel">
-      <h2>Add a service</h2>
-      <div class="grid2">
-        <label>Agent<select id="f-agent"></select></label>
-        <label>Name<input id="f-name" placeholder="SMP season 4"></label>
-        <label>Subdomain<input id="f-sub" placeholder="mc"></label>
+    <section>
+      <div class="section-head">
+        <div>
+          <h2>Services</h2>
+          <p class="muted">One subdomain each. Add ports to say where the traffic goes.</p>
+        </div>
+        <span class="spacer"></span>
+        <button id="add-service">Add service</button>
       </div>
-      <div style="margin-top:14px">
-        <div class="muted" style="font-size:13px">Games</div>
-        <div class="checks" id="f-profiles"></div>
-      </div>
-      <div style="margin-top:14px" id="optional-wrap" class="hide">
-        <div class="muted" style="font-size:13px">Optional ports</div>
-        <div class="checks" id="f-optional"></div>
-      </div>
-      <div class="row" style="margin-top:16px">
-        <button id="create">Create service</button>
-      </div>
+      <div id="services" class="stack"></div>
     </section>
   </div>
 </main>
 
+<!-- Add node -->
+<dialog id="dlg-node">
+  <form method="dialog">
+    <div class="dlg-head"><h3>Add a node</h3></div>
+    <div class="dlg-body">
+      <div class="field">
+        <label for="node-name">Name</label>
+        <input id="node-name" placeholder="basement-pc">
+      </div>
+      <p class="muted" style="font-size:13px;margin:0">You'll get a key to paste into the agent's compose file.</p>
+    </div>
+    <div class="dlg-foot">
+      <button class="ghost" value="cancel">Cancel</button>
+      <button id="node-create" value="ok">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Node key + compose -->
+<dialog id="dlg-key">
+  <div class="dlg-head"><h3>Node created</h3></div>
+  <div class="dlg-body">
+    <div class="banner warn" style="color:var(--warn)">This key is shown once. Copy it now.</div>
+    <div class="field">
+      <label>Key</label>
+      <div class="row">
+        <input class="mono" id="key-value" readonly>
+        <button class="ghost small" id="key-copy">Copy</button>
+      </div>
+    </div>
+    <label>Paste this on the machine, then <span class="mono">docker compose up -d</span></label>
+    <pre id="key-compose"></pre>
+    <div style="margin-top:10px"><button class="ghost small" id="compose-copy">Copy compose file</button></div>
+  </div>
+  <div class="dlg-foot"><button id="key-done">Done</button></div>
+</dialog>
+
+<!-- Add service -->
+<dialog id="dlg-service">
+  <form method="dialog">
+    <div class="dlg-head"><h3>Add a service</h3></div>
+    <div class="dlg-body">
+      <div class="field">
+        <label for="svc-node">Node</label>
+        <select id="svc-node"></select>
+      </div>
+      <div class="field">
+        <label for="svc-sub">Subdomain</label>
+        <div class="row">
+          <input id="svc-sub" placeholder="mc" style="flex:1">
+          <span class="muted mono" id="svc-zone" style="padding-bottom:9px"></span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="svc-name">Label <span style="font-weight:400">(optional)</span></label>
+        <input id="svc-name" placeholder="SMP season 4">
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button class="ghost" value="cancel">Cancel</button>
+      <button id="svc-create" value="ok">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Add port -->
+<dialog id="dlg-port">
+  <form method="dialog">
+    <div class="dlg-head">
+      <h3>Add a port</h3>
+      <p class="muted" style="font-size:13px;margin:4px 0 0" id="port-for"></p>
+    </div>
+    <div class="dlg-body">
+      <div class="row" style="margin-bottom:13px">
+        <div class="field" style="flex:2">
+          <label for="port-host">Server address on your network</label>
+          <input id="port-host" class="mono" placeholder="192.168.1.50" value="127.0.0.1">
+        </div>
+        <div class="field" style="flex:1">
+          <label for="port-local">Port</label>
+          <input id="port-local" class="mono" placeholder="25565" inputmode="numeric">
+        </div>
+      </div>
+      <div class="row" style="margin-bottom:13px">
+        <div class="field">
+          <label for="port-proto">Protocol</label>
+          <select id="port-proto">
+            <option value="tcp">TCP</option>
+            <option value="udp">UDP</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="port-edge">Public port <span style="font-weight:400">(auto)</span></label>
+          <input id="port-edge" class="mono" placeholder="auto" inputmode="numeric">
+        </div>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="port-srv">
+        Minecraft Java — let players connect without typing a port
+      </label>
+    </div>
+    <div class="dlg-foot">
+      <button class="ghost" value="cancel">Cancel</button>
+      <button id="port-create" value="ok">Add port</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
-const $ = (sel) => document.querySelector(sel);
+const $ = (s) => document.querySelector(s);
 let token = localStorage.getItem("portal-token") || "";
-let profiles = [];
-let agents = [];
+let status = null, nodes = [], services = [], portTarget = null;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
     headers: {
-      "Authorization": "Bearer " + token,
+      Authorization: "Bearer " + token,
       ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
     },
   });
   if (res.status === 401) { signOut(); throw new Error("Token rejected."); }
   if (res.status === 204) return null;
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+  if (!res.ok) throw new Error(body.error || "HTTP " + res.status);
   return body;
 }
 
-function showError(message) {
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+function showError(msg) {
   const el = $("#error");
-  el.textContent = message;
-  el.classList.toggle("hide", !message);
+  el.textContent = msg || "";
+  el.classList.toggle("hide", !msg);
+  if (msg) window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+async function guard(fn) { try { showError(""); await fn(); } catch (e) { showError(e.message); } }
 
 function signOut() {
   token = "";
   localStorage.removeItem("portal-token");
   $("#app").classList.add("hide");
+  $("#bar").classList.add("hide");
   $("#login").classList.remove("hide");
-  $("#status-line").textContent = "not connected";
 }
 
 async function refresh() {
-  showError("");
-  const status = await api("/api/status");
-  $("#status-line").textContent =
-    `${status.zone} → ${status.public_ip} · tunnel ${status.tunnel_subnet} · ports ${status.edge_port_range}` +
-    (status.cloudflare_enabled ? "" : " · DNS writes off") +
-    (status.nftables_enabled ? "" : " · nftables off");
+  status = await api("/api/status");
+  $("#zone").textContent = status.zone + " → " + status.public_ip
+    + (status.cloudflare_enabled ? "" : "  (DNS writes off)")
+    + (status.nftables_enabled ? "" : "  (nftables off)");
+  $("#svc-zone").textContent = "." + status.zone;
 
-  profiles = await api("/api/profiles");
-  agents = await api("/api/agents");
-  renderAgents();
-  renderProfilePickers();
-  await renderServices();
+  [nodes, services] = await Promise.all([api("/api/nodes"), api("/api/services")]);
+  renderNodes();
+  renderServices();
 }
 
-function renderAgents() {
-  const body = $("#agents tbody");
-  body.innerHTML = "";
-  if (!agents.length) {
-    body.innerHTML = `<tr><td class="muted">No agents yet. Create an enrollment token and run the agent on the machine with your game servers.</td></tr>`;
-  }
-  for (const a of agents) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><strong>${escapeHtml(a.name)}</strong><div class="muted mono">${a.tunnel_ip}</div></td>
-      <td><span class="pill ${a.online ? "on" : "off"}">${a.online ? "online" : "offline"}</span></td>
-      <td class="muted">${a.service_count} service${a.service_count === 1 ? "" : "s"}</td>
-      <td style="text-align:right"><button class="danger" data-del-agent="${a.id}">Remove</button></td>`;
-    body.appendChild(tr);
-  }
-  const select = $("#f-agent");
-  select.innerHTML = agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join("");
-}
-
-function renderProfilePickers() {
-  $("#f-profiles").innerHTML = profiles.map((p) => `
-    <label><input type="checkbox" name="profile" value="${p.id}">
-    ${escapeHtml(p.name)}${p.addon ? ' <span class="pill">add-on</span>' : ""}</label>`).join("");
-  for (const box of document.querySelectorAll('input[name=profile]')) {
-    box.addEventListener("change", renderOptionalPorts);
-  }
-  renderOptionalPorts();
-}
-
-function selectedProfiles() {
-  return [...document.querySelectorAll('input[name=profile]:checked')].map((b) => b.value);
-}
-
-function renderOptionalPorts() {
-  const chosen = selectedProfiles();
-  const optional = [];
-  for (const p of profiles) {
-    if (!chosen.includes(p.id)) continue;
-    for (const port of p.ports) {
-      if (port.optional) optional.push({ key: `${p.id}/${port.id}`, label: `${p.name}: ${port.label}` });
-    }
-  }
-  $("#optional-wrap").classList.toggle("hide", optional.length === 0);
-  $("#f-optional").innerHTML = optional.map((o) =>
-    `<label><input type="checkbox" name="optional" value="${o.key}"> ${escapeHtml(o.label)}</label>`).join("");
-}
-
-async function renderServices() {
-  const services = await api("/api/services");
-  const body = $("#services tbody");
-  body.innerHTML = "";
-  if (!services.length) {
-    body.innerHTML = `<tr><td class="muted">No services yet.</td></tr>`;
+function renderNodes() {
+  const el = $("#nodes");
+  if (!nodes.length) {
+    el.className = "";
+    el.innerHTML = `<div class="empty">No nodes yet.<br>Add one, then run the agent on the machine with your servers.</div>`;
     return;
   }
-  for (const s of services) {
-    const endpoints = s.endpoints.map((e) =>
-      `<div class="mono endpoint">${e.port_implied_by_srv ? e.host : e.host + ":" + e.port}
-       <span class="muted" style="font-weight:400">${e.protocol}</span></div>`).join("");
-    const actions = s.config_actions.map((c) =>
-      `<li>Set <code>${escapeHtml(c.key)}=${escapeHtml(c.value)}</code> in <code>${escapeHtml(c.file)}</code></li>`).join("");
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><strong>${escapeHtml(s.name)}</strong>
-          <div class="muted mono">${escapeHtml(s.fqdn)}</div>
-          ${actions ? `<ul class="notes">${actions}</ul>` : ""}</td>
-      <td>${endpoints}</td>
-      <td>
-        <span class="pill ${s.enabled ? "on" : "off"}">${s.enabled ? "enabled" : "disabled"}</span>
-        <span class="pill ${s.dns_synced ? "on" : "warn"}">${s.dns_synced ? "dns ok" : "dns pending"}</span>
-      </td>
-      <td style="text-align:right">
-        <button class="ghost" data-toggle="${s.id}" data-enabled="${s.enabled}">${s.enabled ? "Disable" : "Enable"}</button>
-        <button class="danger" data-del-service="${s.id}">Delete</button>
-      </td>`;
-    body.appendChild(tr);
+  el.className = "cards";
+  el.innerHTML = nodes.map((n) => `
+    <div class="card">
+      <div class="svc-head">
+        <span class="svc-name">${esc(n.name)}</span>
+        <span class="spacer"></span>
+        <span class="pill ${n.online ? "on" : "off"}">${n.online ? "online" : "offline"}</span>
+      </div>
+      <div class="muted mono" style="font-size:12.5px;margin-top:6px">${n.tunnel_ip}</div>
+      <div class="svc-head" style="margin-top:10px">
+        <span class="muted" style="font-size:13px">${n.service_count} service${n.service_count === 1 ? "" : "s"}</span>
+        <span class="spacer"></span>
+        <button class="danger" data-del-node="${n.id}">Remove</button>
+      </div>
+    </div>`).join("");
+}
+
+function renderServices() {
+  const el = $("#services");
+  if (!services.length) {
+    el.innerHTML = nodes.length
+      ? `<div class="empty">No services yet.<br>Add one to claim a subdomain, then give it ports.</div>`
+      : `<div class="empty">Add a node first.</div>`;
+    return;
   }
+  el.innerHTML = services.map((s) => `
+    <div class="card">
+      <div class="svc-head">
+        <span class="svc-name">${esc(s.name)}</span>
+        <span class="connect mono">${esc(s.fqdn)}</span>
+        <span class="pill ${s.node_online ? "on" : "off"}">${esc(s.node_name)}</span>
+        ${s.enabled ? "" : '<span class="pill off">disabled</span>'}
+        ${(s.dns_synced || !status.cloudflare_enabled) ? "" : '<span class="pill warn">dns pending</span>'}
+        <span class="spacer"></span>
+        <button class="link" data-toggle="${s.id}" data-on="${s.enabled}">${s.enabled ? "Disable" : "Enable"}</button>
+        <button class="danger" data-del-svc="${s.id}">Delete</button>
+      </div>
+
+      <div class="ports">
+        ${s.ports.length ? s.ports.map((p) => `
+          <div class="port">
+            <span class="mono">${esc(p.connect)}</span>
+            <span class="arrow">→</span>
+            <span class="mono muted">${esc(p.local_host)}:${p.local_port}</span>
+            <span class="pill off">${p.protocol}</span>
+            ${p.srv ? '<span class="pill on">no port needed</span>' : ""}
+            <span class="spacer"></span>
+            <button class="danger" data-del-port="${p.id}">Remove</button>
+          </div>`).join("")
+        : `<div class="muted" style="font-size:13.5px">No ports yet — nothing is reachable until you add one.</div>`}
+        <div style="margin-top:12px">
+          <button class="ghost small" data-add-port="${s.id}" data-fqdn="${esc(s.fqdn)}">Add port</button>
+        </div>
+      </div>
+    </div>`).join("");
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function composeFor(key) {
+  return `services:
+  agent:
+    image: ghcr.io/scopeddlol/portal-agent:beta
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    environment:
+      PORTAL_URL: ${location.origin}
+      PORTAL_KEY: ${key}`;
 }
 
-async function guard(fn) {
-  try { await fn(); } catch (e) { showError(e.message); }
-}
+/* ---- actions ---- */
 
 $("#sign-in").addEventListener("click", () => guard(async () => {
   token = $("#token").value.trim();
@@ -265,66 +419,110 @@ $("#sign-in").addEventListener("click", () => guard(async () => {
   localStorage.setItem("portal-token", token);
   $("#login").classList.add("hide");
   $("#app").classList.remove("hide");
+  $("#bar").classList.remove("hide");
   await refresh();
 }));
-
+$("#token").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#sign-in").click(); });
 $("#sign-out").addEventListener("click", signOut);
 
-$("#new-token").addEventListener("click", () => guard(async () => {
-  const label = $("#agent-label").value.trim() || "new agent";
-  const out = await api("/api/agents/tokens", { method: "POST", body: JSON.stringify({ label }) });
-  const el = $("#token-out");
-  el.innerHTML = `Run this on the machine, within the hour — it is shown once:<br>
-    <code>portal-agent enroll --gateway &lt;this URL&gt; --token ${escapeHtml(out.token)} --name ${escapeHtml(label)}</code>`;
-  el.classList.remove("hide");
-}));
+$("#add-node").addEventListener("click", () => { $("#node-name").value = ""; $("#dlg-node").showModal(); });
+$("#node-create").addEventListener("click", (e) => {
+  const name = $("#node-name").value.trim();
+  if (!name) { e.preventDefault(); return; }
+  setTimeout(() => guard(async () => {
+    const created = await api("/api/nodes", { method: "POST", body: JSON.stringify({ name }) });
+    $("#key-value").value = created.key;
+    $("#key-compose").textContent = composeFor(created.key);
+    $("#dlg-key").showModal();
+    await refresh();
+  }), 0);
+});
+$("#key-copy").addEventListener("click", () => navigator.clipboard.writeText($("#key-value").value));
+$("#compose-copy").addEventListener("click", () => navigator.clipboard.writeText($("#key-compose").textContent));
+$("#key-done").addEventListener("click", () => $("#dlg-key").close());
 
-$("#create").addEventListener("click", () => guard(async () => {
+$("#add-service").addEventListener("click", () => {
+  if (!nodes.length) { showError("Add a node first."); return; }
+  $("#svc-node").innerHTML = nodes.map((n) => `<option value="${n.id}">${esc(n.name)}</option>`).join("");
+  $("#svc-sub").value = ""; $("#svc-name").value = "";
+  $("#dlg-service").showModal();
+});
+$("#svc-create").addEventListener("click", (e) => {
+  const subdomain = $("#svc-sub").value.trim();
+  if (!subdomain) { e.preventDefault(); return; }
+  const body = { node_id: $("#svc-node").value, subdomain, name: $("#svc-name").value.trim() };
+  setTimeout(() => guard(async () => {
+    await api("/api/services", { method: "POST", body: JSON.stringify(body) });
+    await refresh();
+  }), 0);
+});
+
+$("#port-create").addEventListener("click", (e) => {
+  const local_port = parseInt($("#port-local").value, 10);
+  const local_host = $("#port-host").value.trim();
+  if (!local_host || !local_port) { e.preventDefault(); return; }
+  const edge = parseInt($("#port-edge").value, 10);
   const body = {
-    agent_id: $("#f-agent").value,
-    name: $("#f-name").value.trim(),
-    subdomain: $("#f-sub").value.trim(),
-    profiles: selectedProfiles(),
-    enabled_optional_ports: [...document.querySelectorAll('input[name=optional]:checked')].map((b) => b.value),
-    local_port_overrides: {},
+    protocol: $("#port-proto").value,
+    local_host,
+    local_port,
+    edge_port: Number.isFinite(edge) ? edge : null,
+    minecraft_srv: $("#port-srv").checked,
   };
-  if (!body.agent_id) throw new Error("Enroll an agent first.");
-  if (!body.profiles.length) throw new Error("Pick at least one game.");
-  await api("/api/services", { method: "POST", body: JSON.stringify(body) });
-  $("#f-name").value = ""; $("#f-sub").value = "";
-  await refresh();
-}));
+  const id = portTarget;
+  setTimeout(() => guard(async () => {
+    await api(`/api/services/${id}/ports`, { method: "POST", body: JSON.stringify(body) });
+    await refresh();
+  }), 0);
+});
 
 document.addEventListener("click", (event) => {
-  const t = event.target;
-  if (t.dataset.delService) {
-    guard(async () => {
-      if (!confirm("Delete this service and retract its DNS?")) return;
-      await api("/api/services/" + t.dataset.delService, { method: "DELETE" });
-      await refresh();
-    });
+  const t = event.target.closest("button");
+  if (!t) return;
+  const d = t.dataset;
+
+  if (d.addPort) {
+    portTarget = d.addPort;
+    $("#port-for").textContent = "for " + d.fqdn;
+    $("#port-host").value = "127.0.0.1";
+    $("#port-local").value = ""; $("#port-edge").value = "";
+    $("#port-proto").value = "tcp"; $("#port-srv").checked = false;
+    $("#dlg-port").showModal();
   }
-  if (t.dataset.delAgent) {
-    guard(async () => {
-      if (!confirm("Remove this agent? Its services are deleted too.")) return;
-      await api("/api/agents/" + t.dataset.delAgent, { method: "DELETE" });
-      await refresh();
+  if (d.delPort) guard(async () => {
+    await api("/api/ports/" + d.delPort, { method: "DELETE" });
+    await refresh();
+  });
+  if (d.toggle) guard(async () => {
+    await api(`/api/services/${d.toggle}/enabled`, {
+      method: "POST", body: JSON.stringify({ enabled: d.on !== "true" }),
     });
-  }
-  if (t.dataset.toggle) {
-    guard(async () => {
-      await api("/api/services/" + t.dataset.toggle + "/enabled", {
-        method: "POST",
-        body: JSON.stringify({ enabled: t.dataset.enabled !== "true" }),
-      });
-      await refresh();
-    });
+    await refresh();
+  });
+  if (d.delSvc) guard(async () => {
+    if (!confirm("Delete this service and its DNS records?")) return;
+    await api("/api/services/" + d.delSvc, { method: "DELETE" });
+    await refresh();
+  });
+  if (d.delNode) guard(async () => {
+    if (!confirm("Remove this node? Its services are deleted too.")) return;
+    await api("/api/nodes/" + d.delNode, { method: "DELETE" });
+    await refresh();
+  });
+});
+
+// Minecraft is the common case: tick the box and the port fills itself in.
+$("#port-srv").addEventListener("change", (e) => {
+  if (e.target.checked && !$("#port-local").value) {
+    $("#port-local").value = "25565";
+    $("#port-proto").value = "tcp";
   }
 });
 
 if (token) {
   $("#login").classList.add("hide");
   $("#app").classList.remove("hide");
+  $("#bar").classList.remove("hide");
   guard(refresh);
 }
 </script>

@@ -68,8 +68,6 @@ pub struct GatewaySection {
     pub listen: SocketAddr,
     #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
-    #[serde(default = "default_profiles_dir")]
-    pub profiles_dir: PathBuf,
     #[serde(default = "default_port_range_start")]
     pub edge_port_range_start: u16,
     #[serde(default = "default_port_range_end")]
@@ -147,9 +145,6 @@ fn default_listen() -> SocketAddr {
 }
 fn default_data_dir() -> PathBuf {
     PathBuf::from("/var/lib/portal")
-}
-fn default_profiles_dir() -> PathBuf {
-    PathBuf::from("/etc/portal/profiles")
 }
 fn default_port_range_start() -> u16 {
     EdgePortRange::DEFAULT.start()
