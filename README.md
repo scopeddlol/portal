@@ -39,45 +39,143 @@ Portal also handles the fiddly parts for you: it picks the port numbers, writes 
 
 ## Setup
 
-### 1. Set up the rented server
+No cloning, no compiler, no build. Four small files on the rented server and one at home.
 
-```bash
-git clone https://github.com/scopeddlol/portal.git
-cd portal/deploy
-cp config.example.toml config.toml
-nano config.toml     # fill in your domain and the server's IP address
+### 1. On the rented server
+
+First, in your Cloudflare dashboard, add one **A record**: `portal` → your server's IP, with the orange cloud **off**. That's the address you'll manage everything from.
+
+Then make a folder and put these four files in it.
+
+<details open>
+<summary><b>compose.yml</b></summary>
+
+```yaml
+services:
+  gateway:
+    image: ghcr.io/scopeddlol/portal-gateway:beta
+    container_name: portal-gateway
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    volumes:
+      - portal-data:/var/lib/portal
+      - ./config.toml:/etc/portal/config.toml:ro
+    env_file: [.env]
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: portal-caddy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  portal-data:
+  caddy-data:
+```
+</details>
+
+<details open>
+<summary><b>config.toml</b> — change the four values</summary>
+
+```toml
+[gateway]
+public_ip = "203.0.113.10"        # your rented server's public IP
+zone = "yourdomain.com"           # your domain
+reserved_tcp_ports = [80, 443]    # leave these for the control panel
+
+[tunnel]
+endpoint = "203.0.113.10:51820"   # the same IP, agents dial this
+
+[cloudflare]
+zone_id = "0123456789abcdef"      # Cloudflare dashboard → your domain → overview
+```
+</details>
+
+<details open>
+<summary><b>Caddyfile</b> — gives the panel a padlock, automatically</summary>
+
+```caddyfile
+portal.yourdomain.com {
+	reverse_proxy 127.0.0.1:8080
+}
+```
+</details>
+
+<details open>
+<summary><b>.env</b> — your two secrets</summary>
+
+```ini
+PORTAL_CF_API_TOKEN=your-cloudflare-api-token
+PORTAL_ADMIN_TOKEN=make-up-a-long-random-password
 ```
 
-Add your two secrets, then start it:
+The Cloudflare token comes from **My Profile → API Tokens** and needs exactly one permission: **Zone → DNS → Edit**.
+</details>
+
+Then start it:
 
 ```bash
-cat > .env <<'EOF'
-PORTAL_CF_API_TOKEN=<your Cloudflare token>
-PORTAL_ADMIN_TOKEN=<any long random password you make up>
-EOF
 chmod 600 .env
 
-docker compose up -d --build
+# Without this, the server quietly drops every game packet.
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-portal.conf
+sudo sysctl --system
+
+docker compose up -d
 ```
 
-The Cloudflare token comes from your Cloudflare dashboard and needs one permission: **Zone → DNS → Edit**.
+Make sure ports **80**, **443** and **UDP 51820** are open on your server's firewall — the first two get the panel its certificate, the last one is the tunnel.
 
-### 2. Connect your home PC
+### 2. Open the control panel
 
-Open the web page (see [the setup notes](deploy/README.md) for how to reach it safely), sign in with your admin password, and click **Create enrollment token**. Then on the PC with your game servers:
+Go to **https://portal.yourdomain.com** and sign in with your `PORTAL_ADMIN_TOKEN`.
+
+Click **Create enrollment token** and copy what it gives you — it's shown once and lasts an hour.
+
+### 3. On your home PC
+
+One file:
+
+<details open>
+<summary><b>agent-compose.yml</b></summary>
+
+```yaml
+services:
+  agent:
+    image: ghcr.io/scopeddlol/portal-agent:beta
+    container_name: portal-agent
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    volumes:
+      - agent-data:/var/lib/portal-agent
+
+volumes:
+  agent-data:
+```
+</details>
+
+Register it once, then leave it running:
 
 ```bash
-cd portal/deploy
 docker compose -f agent-compose.yml run --rm agent \
-  enroll --gateway https://portal.yourdomain.com --token <token> --name my-pc
+  enroll --gateway https://portal.yourdomain.com --token PASTE_TOKEN_HERE --name my-pc
+
 docker compose -f agent-compose.yml up -d
 ```
 
-### 3. Add your game server
+### 4. Add your game server
 
-Back on the web page: pick your PC, give the server a name, choose an address like `mc`, tick the games it runs, and press **Create**.
+Back in the control panel: pick your PC, name the server, choose an address like `mc`, tick the games it runs, and press **Create**.
 
-That's it. Your friends can now connect to `mc.yourdomain.com`.
+Your friends can now connect to `mc.yourdomain.com`.
+
+> [!NOTE]
+> The images above land in the registry with the first published release. Until then — or if you'd rather build it yourself — see [building from source](deploy/README.md#not-using-the-published-images).
 
 ## Games it knows about
 
@@ -101,7 +199,7 @@ This is a **beta**. It works, but a few things are worth knowing before you rely
 
 ## Learn more
 
-- 📘 [**Full setup and troubleshooting**](deploy/README.md) — safer ways to reach the web page, running without Docker, checking it works
+- 📘 [**Full setup and troubleshooting**](deploy/README.md) — building from source, running without Docker, checking it works
 - 🔧 [**How it works inside**](docs/how-it-works.md) — the architecture, why Cloudflare can't carry game traffic, and the design decisions
 - 🧩 [**Game profiles**](profiles/) — add support for another game
 

@@ -1,70 +1,98 @@
 # Deploying
 
-Two halves. The gateway runs on a VPS with a public IP; the agent runs at home
-next to the game servers. Nothing at home needs a port forward.
+Two halves. The gateway runs on a rented server with a public IP; the agent
+runs at home next to the game servers. Nothing at home needs a port forward.
+
+The quick path is in the [main README](../README.md#setup) — copy four small
+files, no clone and no compiler. This page is the detail behind it.
 
 ## What you need first
 
-- A VPS with a public IPv4 and root.
+- A server with a public IPv4 and root.
 - A domain on Cloudflare, and its **Zone ID** (zone overview page).
 - A Cloudflare API token with **Zone → DNS → Edit** on that zone and nothing
   else. Cloudflare cannot scope a token tighter than a zone, which is why the
   gateway refuses to touch records outside the names it created.
 
-## VPS
+## Files
+
+| File | What it is |
+| --- | --- |
+| `compose.yml` | Gateway + Caddy, pulling published images. The normal way to run it. |
+| `agent-compose.yml` | The agent, for the machine at home. |
+| `Caddyfile` | HTTPS in front of the control panel. |
+| `config.example.toml` | Every setting, annotated. Copy to `config.toml`. |
+| `compose.build.yml` | Builds the gateway from source instead. For working on Portal itself. |
+
+## Two things Compose cannot do for you
+
+**IP forwarding** has to be set on the host. Docker refuses namespaced network
+sysctls when a container shares the host's network namespace, which the gateway
+must do, so this cannot live in `compose.yml`:
 
 ```bash
-git clone <this repo> portal && cd portal/deploy
-cp config.example.toml config.toml
-$EDITOR config.toml          # public_ip, zone, zone_id, endpoint
-
-cat > .env <<'EOF'
-PORTAL_CF_API_TOKEN=<your cloudflare token>
-PORTAL_ADMIN_TOKEN=<a long random string you invent>
-EOF
-chmod 600 .env
-
-docker compose up -d --build
-docker compose logs -f gateway
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-portal.conf
+sudo sysctl --system
 ```
 
-Open the UI on `listen` and sign in with `PORTAL_ADMIN_TOKEN`. If you leave
-that variable unset the gateway generates a token, logs it once, and forgets it
-on restart — fine for a first look, not for anything you want to keep.
+Without it, DNAT silently drops every game packet and everything else looks fine.
 
-The example binds the UI to `127.0.0.1:8080`. Reach it over an SSH tunnel
-(`ssh -L 8080:127.0.0.1:8080 vps`) or put a reverse proxy with TLS in front.
-Do not expose it directly: the admin token is the only thing between the
-internet and control of your DNS.
+**The panel's own DNS record.** Portal creates records for the game servers you
+add, but not for itself — it would have to be running and reachable to do that.
+Add an `A` record for `portal` pointing at the server, orange cloud off.
 
-UDP `51820` must be open on the VPS firewall or the tunnel never comes up.
+## Why HTTPS is not optional here
 
-### Not using Docker
+The agent at home reaches the gateway's API over the internet, so the API has
+to be publicly reachable. The admin token protects your DNS, so it must not
+cross the internet in the clear. Caddy fetches and renews a certificate on its
+own, which makes the secure path the easy one.
+
+If you would rather not expose the panel at all, bind it to localhost, reach it
+over an SSH tunnel, and put only the API behind a proxy — but the agent still
+needs a way in.
+
+## Checking it works
+
+```bash
+# The rules the gateway wrote.
+nft list table ip portal
+
+# Peers and handshakes. A handshake under ~2 minutes old means the agent is up.
+wg show wg0
+
+# What players will resolve.
+dig +short mc.example.com
+dig +short SRV _minecraft._tcp.mc.example.com
+```
+
+If a service shows **dns pending** in the panel, the Cloudflare call failed; the
+gateway retries once a minute and the reason is in `docker compose logs`.
+
+## Not using the published images
+
+To build from source instead — because you are changing Portal, or you want to
+audit what you run:
+
+```bash
+git clone https://github.com/scopeddlol/portal.git
+cd portal/deploy
+cp config.example.toml config.toml
+$EDITOR config.toml
+docker compose -f compose.build.yml up -d --build
+```
+
+## Without Docker at all
 
 Build with `cargo build --release`, put `portal-gateway` on the box, install
-`nftables` and `wireguard-tools`, set `net.ipv4.ip_forward=1`, and run it with
+`nftables` and `wireguard-tools`, enable IP forwarding, and run it with
 `PORTAL_CONFIG` pointing at your config. It needs `CAP_NET_ADMIN`; a systemd
 unit with `AmbientCapabilities=CAP_NET_ADMIN` is enough — it does not need to
 be root.
 
-## Home
-
-In the web UI, **Create enrollment token**, then on the machine with the game
-servers:
-
-```bash
-cd portal/deploy
-docker compose -f agent-compose.yml run --rm agent \
-  enroll --gateway https://portal.example.com --token <token> --name basement-box
-docker compose -f agent-compose.yml up -d
-```
-
-The token is single-use and expires in an hour. The agent generates its own
-WireGuard key at enrollment; the private half never leaves the machine.
-
 ## Adding a server
 
-In the UI: pick the agent, name it, choose a subdomain, tick the games. A
+In the panel: pick the agent, name it, choose a subdomain, tick the games. A
 Minecraft server with proximity voice is `minecraft-java` + `simple-voice-chat`.
 
 Two things the gateway cannot do for you:
@@ -81,21 +109,4 @@ Two things the gateway cannot do for you:
 The orange cloud carries HTTP/HTTPS on a fixed set of ports. It will not carry
 TCP 25565 or UDP 24454. Every record this gateway writes is DNS-only, on
 purpose: proxying a game record would not hide anything, it would break the
-game. Cloudflare is the control plane; your VPS is the data plane.
-
-## Checking it works
-
-```bash
-# On the VPS: the rules the gateway wrote.
-nft list table ip portal
-
-# Peers and handshakes. A handshake under ~2 minutes old means the agent is up.
-wg show wg0
-
-# From anywhere: what players will resolve.
-dig +short mc.example.com
-dig +short SRV _minecraft._tcp.mc.example.com
-```
-
-If a service shows **dns pending** in the UI, the Cloudflare call failed; the
-gateway retries once a minute and the reason is in `docker compose logs`.
+game. Cloudflare is the control plane; your server is the data plane.

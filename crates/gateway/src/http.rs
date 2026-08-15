@@ -422,7 +422,7 @@ fn revision_of(forwards: &[portal_proto::api::Forward]) -> u64 {
 
 impl AppState {
     fn gateway_public_key(&self) -> Result<portal_proto::wg::PublicKey, String> {
-        let private = wgctl::load_or_create_private_key(&self.config.tunnel.private_key_file)
+        let private = wgctl::load_or_create_private_key(&self.config.private_key_file())
             .map_err(|e| format!("could not read the gateway's WireGuard key: {e}"))?;
         portal_proto::wg::public_from_private(&private)
             .map_err(|e| format!("the gateway's WireGuard key is not valid: {e}"))
@@ -482,7 +482,7 @@ fn reconcile_nftables(state: &AppState) -> anyhow::Result<()> {
 
 fn reconcile_wireguard(state: &AppState) -> anyhow::Result<()> {
     let agents = state.store.list_agents()?;
-    let private_key = wgctl::load_or_create_private_key(&state.config.tunnel.private_key_file)?;
+    let private_key = wgctl::load_or_create_private_key(&state.config.private_key_file())?;
     let iface = wgctl::InterfaceConfig {
         private_key,
         listen_port: state.config.tunnel.listen_port,

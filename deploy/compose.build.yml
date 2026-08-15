@@ -1,8 +1,15 @@
-# VPS side. Run this on the machine with the public IP.
+# Build the gateway from source instead of pulling the published image.
 #
-# network_mode: host is not laziness. The gateway writes nftables rules in the
-# host's network namespace and drives a WireGuard interface there; a bridged
-# container would program a namespace no player can reach.
+# For developing on Portal itself. If you just want to run it, use compose.yml,
+# which needs no clone and no toolchain.
+#
+#   docker compose -f compose.build.yml up -d --build
+#
+# IP forwarding has to be enabled on the host, not here — Docker refuses
+# namespaced network sysctls when a container shares the host's netns:
+#
+#   echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-portal.conf
+#   sudo sysctl --system
 
 services:
   gateway:
@@ -17,14 +24,10 @@ services:
       # NET_ADMIN for nftables and WireGuard. NET_RAW is not needed: the
       # gateway never touches a packet itself.
       - NET_ADMIN
-    sysctls:
-      # DNAT without forwarding enabled silently drops every game packet.
-      - net.ipv4.ip_forward=1
     volumes:
       - portal-data:/var/lib/portal
       - ./config.toml:/etc/portal/config.toml:ro
       - ../profiles:/etc/portal/profiles:ro
-      - /etc/portal/keys:/etc/portal/keys
     environment:
       # Secrets stay out of config.toml. Put them in deploy/.env, which is
       # gitignored, or hand them in from your own secret store.

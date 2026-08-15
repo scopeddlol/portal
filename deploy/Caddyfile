@@ -1,0 +1,12 @@
+# Puts HTTPS in front of the control panel.
+#
+# The agent at home has to reach the gateway's API over the internet, and the
+# admin token is what protects your DNS — so it must not travel in the clear.
+# Caddy fetches and renews a certificate on its own; there is nothing to do
+# beyond pointing this name at the server.
+#
+# Replace the hostname with yours.
+
+portal.yourdomain.com {
+	reverse_proxy 127.0.0.1:8080
+}
