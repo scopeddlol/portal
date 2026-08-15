@@ -10,7 +10,7 @@
 //! Nothing in this module makes an HTTP request. It computes what the zone
 //! should look like and what has to change; the Cloudflare client applies it.
 
-use portal_proto::profile::SrvSpec;
+use portal_proto::model::SrvSpec;
 use std::net::Ipv4Addr;
 
 /// Short by DNS standards, on purpose: rebuilding a VPS changes the edge IP,
@@ -67,17 +67,17 @@ impl DnsRecord {
 }
 
 /// An SRV record to publish for one allocated port.
-#[derive(Debug, Clone, Copy)]
-pub struct SrvBinding<'a> {
-    pub spec: &'a SrvSpec,
+#[derive(Debug, Clone)]
+pub struct SrvBinding {
+    pub spec: SrvSpec,
     pub edge_port: u16,
 }
 
 /// Everything that should exist in the zone for one service.
-pub fn service_records<'a>(
+pub fn service_records(
     fqdn: &str,
     edge_ip: Ipv4Addr,
-    srvs: impl IntoIterator<Item = SrvBinding<'a>>,
+    srvs: impl IntoIterator<Item = SrvBinding>,
 ) -> Vec<DnsRecord> {
     let mut records = vec![DnsRecord::A {
         name: fqdn.to_string(),
@@ -168,7 +168,7 @@ pub fn reconcile_service(
     }
 
     // Whatever is left under this service's names is stale: a port that moved,
-    // a profile that was removed, or a duplicate of a record we just matched.
+    // a mapping that was removed, or a duplicate of a record we just matched.
     for (i, existing) in mine.iter().enumerate() {
         if !matched[i] {
             plan.delete.push(existing.id.clone());
@@ -185,12 +185,7 @@ mod tests {
     const IP: Ipv4Addr = Ipv4Addr::new(203, 0, 113, 10);
 
     fn srv_spec() -> SrvSpec {
-        SrvSpec {
-            service: "_minecraft".into(),
-            proto: "_tcp".into(),
-            priority: 0,
-            weight: 5,
-        }
+        SrvSpec::minecraft_java()
     }
 
     fn existing(id: &str, record: DnsRecord) -> ExistingRecord {
@@ -217,7 +212,7 @@ mod tests {
             "mc.example.com",
             IP,
             [SrvBinding {
-                spec: &spec,
+                spec: spec.clone(),
                 edge_port: 30001,
             }],
         );
@@ -243,7 +238,7 @@ mod tests {
             "mc.example.com",
             IP,
             [SrvBinding {
-                spec: &spec,
+                spec: spec.clone(),
                 edge_port: 25565,
             }],
         );

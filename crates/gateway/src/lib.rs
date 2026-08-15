@@ -7,8 +7,7 @@
 //! The decision-making layer is pure and testable without a VPS:
 //!
 //! - [`alloc`] — which public port a service gets, given what is already taken
-//! - [`plan`] — profiles plus a request turned into port mappings, endpoints,
-//!   config actions and DNS records
+//! - [`plan`] — a service and its mappings turned into endpoints and DNS records
 //! - [`dns`] — the desired zone contents, and the diff to get Cloudflare there
 //! - [`net`] — tunnel address allocation
 //!
@@ -36,5 +35,5 @@ pub use alloc::{AllocError, EdgePortRange, PortAllocator, PortRequest};
 pub use config::Config;
 pub use dns::{DnsPlan, DnsRecord, ExistingRecord};
 pub use net::Ipv4Net;
-pub use plan::{PlanError, Planner, ServicePlan};
+pub use plan::{describe_service, PlanError, ServiceDescription};
 pub use store::Store;

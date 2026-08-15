@@ -8,44 +8,55 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-C084FC?style=for-the-badge&labelColor=0B1020"></a>
   <img alt="Rust" src="https://img.shields.io/badge/built%20with-Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white&labelColor=0B1020">
   <img alt="Docker" src="https://img.shields.io/badge/runs%20with-Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=0B1020">
-  <img alt="Linux" src="https://img.shields.io/badge/home%20PC-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=white&labelColor=0B1020">
+  <img alt="Linux" src="https://img.shields.io/badge/agent-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=white&labelColor=0B1020">
 </p>
 
 <p align="center">
-  <b>Let friends join game servers on your home PC — without touching your router or sharing your home address.</b>
+  <b>Publishes game servers on a private network through a rented server — no port forwarding, no exposed home address.</b>
 </p>
 
 ---
 
-## What is this?
+## Overview
 
-You want to run a Minecraft server on your own PC and have friends join. Normally that means two uncomfortable things: opening a port on your home router, and handing out your home IP address — which quietly tells people roughly where you live.
+Running a game server at home normally means forwarding a port on the router and
+handing players an IP address that identifies the household.
 
-Portal removes both. You rent a small server somewhere (about **$5 a month**), and Portal joins your home PC to it through a private, encrypted tunnel. Friends connect to a normal address like `mc.yourdomain.com`, which points at the **rented** server. Your home address is never published, and nothing on your router changes.
+Portal replaces both. A small agent on the home network holds an encrypted
+WireGuard tunnel open to a rented server with a public IP. Players connect to a
+normal subdomain such as `mc.example.com`, which resolves to the **rented**
+server. The home address never appears in DNS, and no inbound port is opened on
+the router.
 
 <p align="center">
-  <img src="assets/how-it-works.svg" alt="Friends connect to your domain, which points at a small rented server, which passes traffic down an encrypted tunnel to your PC at home" width="820">
+  <img src="assets/how-it-works.svg" alt="Players resolve a subdomain to a rented server, which passes traffic down an encrypted tunnel to servers on a home network" width="820">
 </p>
 
-Portal also handles the fiddly parts for you: it picks the port numbers, writes the DNS records so your address just works, and knows that a Minecraft server with voice chat needs two ports rather than one.
+Each forward names the address it targets, so **one agent covers an entire
+network**. Ten servers on ten machines need one container, not ten. Public ports
+are allocated automatically so servers that all use the same local port do not
+collide, and Minecraft Java services can publish an `SRV` record so players
+still connect to a bare hostname.
 
-## What you need
+## Requirements
 
 | | |
 | --- | --- |
-| 🌐 **A domain name** | Managed by Cloudflare. Roughly $10 a year. |
-| 🖥️ **A small rented server** | Any cheap Linux VPS with a public IP. About $5 a month. |
-| 🏠 **A home PC** | Running Linux or Docker, where your game servers live. |
+| 🌐 **Domain** | Managed by Cloudflare, with an API token scoped to DNS edit on that zone |
+| 🖥️ **Rented server** | Any Linux VPS with a public IPv4 address and Docker |
+| 🏠 **Home machine** | Linux with Docker, on the same network as the servers being published |
 
 ## Setup
 
-No cloning, no compiler, no build. Four small files on the rented server and one at home.
+Four files on the rented server, one on the home network. No clone, no
+toolchain, no build step.
 
-### 1. On the rented server
+### 1. Gateway
 
-First, in your Cloudflare dashboard, add one **A record**: `portal` → your server's IP, with the orange cloud **off**. That's the address you'll manage everything from.
+In Cloudflare, add an `A` record for `portal` pointing at the rented server,
+with the proxy (orange cloud) **off**. That subdomain serves the control panel.
 
-Then make a folder and put these four files in it.
+Create a directory on the server containing these four files.
 
 <details open>
 <summary><b>compose.yml</b></summary>
@@ -79,66 +90,67 @@ volumes:
 </details>
 
 <details open>
-<summary><b>config.toml</b> — change the four values</summary>
+<summary><b>config.toml</b> — four values to change</summary>
 
 ```toml
 [gateway]
-public_ip = "203.0.113.10"        # your rented server's public IP
-zone = "yourdomain.com"           # your domain
-reserved_tcp_ports = [80, 443]    # leave these for the control panel
+public_ip = "203.0.113.10"        # the rented server's public IP
+zone = "example.com"              # the Cloudflare zone
+reserved_tcp_ports = [80, 443]    # left free for the control panel
 
 [tunnel]
-endpoint = "203.0.113.10:51820"   # the same IP, agents dial this
+endpoint = "203.0.113.10:51820"   # the same IP; agents dial this
 
 [cloudflare]
-zone_id = "0123456789abcdef"      # Cloudflare dashboard → your domain → overview
+zone_id = "0123456789abcdef"      # Cloudflare dashboard → zone → overview
 ```
 </details>
 
 <details open>
-<summary><b>Caddyfile</b> — gives the panel a padlock, automatically</summary>
+<summary><b>Caddyfile</b> — TLS for the control panel</summary>
 
 ```caddyfile
-portal.yourdomain.com {
+portal.example.com {
 	reverse_proxy 127.0.0.1:8080
 }
 ```
 </details>
 
 <details open>
-<summary><b>.env</b> — your two secrets</summary>
+<summary><b>.env</b> — secrets, kept out of config.toml</summary>
 
 ```ini
-PORTAL_CF_API_TOKEN=your-cloudflare-api-token
-PORTAL_ADMIN_TOKEN=make-up-a-long-random-password
+PORTAL_CF_API_TOKEN=cloudflare-api-token
+PORTAL_ADMIN_TOKEN=a-long-random-string
 ```
 
-The Cloudflare token comes from **My Profile → API Tokens** and needs exactly one permission: **Zone → DNS → Edit**.
+The Cloudflare token comes from **My Profile → API Tokens** and needs one
+permission: **Zone → DNS → Edit**.
 </details>
 
-Then start it:
+Start it:
 
 ```bash
 chmod 600 .env
 
-# Without this, the server quietly drops every game packet.
+# Required. Without it the kernel drops every forwarded packet.
 echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-portal.conf
 sudo sysctl --system
 
 docker compose up -d
 ```
 
-Make sure ports **80**, **443** and **UDP 51820** are open on your server's firewall — the first two get the panel its certificate, the last one is the tunnel.
+Ports **80**, **443** and **UDP 51820** must be open on the server's firewall —
+the first two for the control panel's certificate, the last for the tunnel.
 
-### 2. Open the control panel
+### 2. Control panel
 
-Go to **https://portal.yourdomain.com** and sign in with your `PORTAL_ADMIN_TOKEN`.
+Open `https://portal.example.com` and sign in with `PORTAL_ADMIN_TOKEN`.
 
-Click **Create enrollment token** and copy what it gives you — it's shown once and lasts an hour.
+### 3. Agent
 
-### 3. On your home PC
-
-One file:
+Click **Add node**, give it a name, and copy the key it returns. The panel
+renders the compose file below with the key already filled in.
 
 <details open>
 <summary><b>agent-compose.yml</b></summary>
@@ -151,58 +163,58 @@ services:
     restart: unless-stopped
     network_mode: host
     cap_add: [NET_ADMIN]
-    volumes:
-      - agent-data:/var/lib/portal-agent
-
-volumes:
-  agent-data:
+    environment:
+      PORTAL_URL: https://portal.example.com
+      PORTAL_KEY: the-key-from-the-control-panel
 ```
 </details>
 
-Register it once, then leave it running:
-
 ```bash
-docker compose -f agent-compose.yml run --rm agent \
-  enroll --gateway https://portal.yourdomain.com --token PASTE_TOKEN_HERE --name my-pc
-
 docker compose -f agent-compose.yml up -d
 ```
 
-### 4. Add your game server
+That is the entire home-side setup. The agent stores nothing: it generates a
+tunnel key on each start and registers it, so there is no volume to preserve
+and no enrollment step. One agent serves every machine on its network.
 
-Back in the control panel: pick your PC, name the server, choose an address like `mc`, tick the games it runs, and press **Create**.
+### 4. Services and ports
 
-Your friends can now connect to `mc.yourdomain.com`.
+Two steps per server:
 
-> [!NOTE]
-> The images above land in the registry with the first published release. Until then — or if you'd rather build it yourself — see [building from source](deploy/README.md#not-using-the-published-images).
+1. **Add service** — choose the node and a subdomain such as `mc`.
+2. **Add port** on that service — the server's address on the local network
+   (`192.168.1.50`) and its port (`25565`). For Minecraft Java, ticking the SRV
+   box lets players omit the port.
 
-## Games it knows about
+Servers may share the same local port; each service receives its own public
+port, and the panel shows the exact address players use.
 
-| Game | Notes |
+## What can be published
+
+| | |
 | --- | --- |
-| 🟩 **Minecraft (Java)** | Friends type just `mc.yourdomain.com`, no port number needed |
-| 🟦 **Minecraft (Bedrock)** | Consoles and phones can join too |
-| 🎙️ **Simple Voice Chat** | Add-on for Java — tick it alongside Minecraft |
-| 🧪 **Hytale** | Placeholder — the port numbers are guesses until the game exists |
+| 🟩 **Minecraft (Java)** | With the SRV box ticked, players connect to `mc.example.com` |
+| 🟦 **Minecraft (Bedrock)** | Bedrock ignores SRV, so the address includes the port |
+| 🎙️ **Voice chat** | An extra UDP port on the same subdomain |
+| 🎮 **Anything else** | Any TCP or UDP port; Portal is indifferent to the protocol above it |
 
-Adding another game is one small text file, not a code change. See [`profiles/`](profiles/).
+## Limitations
 
-## Good to know
+- The agent requires Linux with kernel WireGuard and `CAP_NET_ADMIN`.
+- Traffic is masqueraded into the tunnel, so servers observe the tunnel address
+  rather than individual player addresses. IP bans and IP-based plugins behave
+  accordingly.
+- IPv4 only.
+- Servers that advertise their own address to clients — voice chat among them —
+  must be configured with the public address by hand. Portal does not modify
+  server files.
 
-This is a **beta**. It works, but a few things are worth knowing before you rely on it:
+## Documentation
 
-- **Your home PC needs Linux or Docker.** A native Windows version is planned but not built yet.
-- **Your game server sees one address for everyone.** Player IP addresses arrive looking identical, so IP bans and IP-based plugins won't behave as you'd expect.
-- **IPv4 only** for now.
-- **You still set your own game config.** If you use voice chat, the web page tells you exactly which line to change and where — Portal won't edit your server files behind your back.
+- [Deployment](deploy/README.md) — configuration reference, building from
+  source, running without Docker, verification commands
+- [How it works](docs/how-it-works.md) — architecture and design decisions
 
-## Learn more
-
-- 📘 [**Full setup and troubleshooting**](deploy/README.md) — building from source, running without Docker, checking it works
-- 🔧 [**How it works inside**](docs/how-it-works.md) — the architecture, why Cloudflare can't carry game traffic, and the design decisions
-- 🧩 [**Game profiles**](profiles/) — add support for another game
-
-## Licence
+## License
 
 MIT. See [LICENSE](LICENSE).

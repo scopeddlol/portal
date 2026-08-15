@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nftables wireguard-tools iproute2 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/portal-gateway /usr/local/bin/
-COPY profiles /etc/portal/profiles
 ENV PORTAL_CONFIG=/etc/portal/config.toml
 VOLUME ["/var/lib/portal"]
 ENTRYPOINT ["/usr/local/bin/portal-gateway"]
@@ -30,6 +29,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wireguard-tools iproute2 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /src/target/release/portal-agent /usr/local/bin/
-VOLUME ["/var/lib/portal-agent"]
 ENTRYPOINT ["/usr/local/bin/portal-agent"]
-CMD ["run"]

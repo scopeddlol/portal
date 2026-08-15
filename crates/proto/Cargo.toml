@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Shared types, wire protocol and game profile schema for the game proxy."
+description = "Shared types and wire protocol for the Portal gateway and agent."
 
 [dependencies]
 anyhow.workspace = true

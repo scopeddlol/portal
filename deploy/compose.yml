@@ -1,7 +1,7 @@
-# Portal gateway — run this on your rented server (the one with a public IP).
+# Portal gateway — runs on the rented server with the public IP.
 #
-# Needs two files beside it: config.toml and .env. Nothing else — no clone, no
-# build. See https://github.com/scopeddlol/portal#setup
+# Expects config.toml and .env alongside it. See
+# https://github.com/scopeddlol/portal#setup
 #
 #   docker compose up -d
 #
@@ -9,9 +9,9 @@
 # drives a WireGuard interface in the host's network namespace; a bridged
 # container would program a namespace no player can reach.
 #
-# One thing this file cannot do for you: enable IP forwarding. Docker refuses
-# namespaced network sysctls when a container shares the host's netns, so run
-# this once on the host or DNAT silently drops every game packet:
+# IP forwarding cannot be set here: Docker refuses namespaced network sysctls
+# when a container shares the host's netns. Run this once on the host, or DNAT
+# drops every forwarded packet:
 #
 #   echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-portal.conf
 #   sudo sysctl --system
@@ -27,20 +27,20 @@ services:
       # touches a packet itself.
       - NET_ADMIN
     volumes:
-      # Holds the database and the gateway's WireGuard key. Both are state —
-      # lose this volume and every enrolled agent has to be re-enrolled.
+      # Holds the database and the gateway's WireGuard key. Both are state;
+      # losing this volume invalidates every node.
       - portal-data:/var/lib/portal
       - ./config.toml:/etc/portal/config.toml:ro
     env_file:
-      # Secrets stay out of config.toml, which is the file people paste into
-      # forum posts when asking why their ports do not work.
+      # Secrets stay out of config.toml, which is the file most likely to be
+      # pasted into a forum post.
       - .env
     environment:
       - RUST_LOG=portal_gateway=info
 
-  # HTTPS for the control panel. The agent at home has to reach the API over
-  # the internet, and the admin token controls your DNS, so it cannot travel in
-  # the clear. Caddy gets and renews the certificate by itself.
+  # HTTPS for the control panel. The agent reaches the API over the internet
+  # and the admin token controls the whole DNS zone, so it cannot travel in the
+  # clear. Caddy obtains and renews the certificate on its own.
   #
   # Host networking here too, so it can reach the gateway on 127.0.0.1:8080.
   caddy:

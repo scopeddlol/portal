@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="Friends connect to your domain name, which points at a small rented server, which passes traffic down a private tunnel to your PC at home">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="Players resolve a subdomain to a rented server, which passes traffic down an encrypted tunnel to servers on a home network">
   <title>How Portal works</title>
 
   <defs>
@@ -19,9 +19,9 @@
     <!-- Friends -->
     <g>
       <rect x="48" y="60" width="252" height="140" rx="18" fill="#182034"/>
-      <text x="174" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Your friends</text>
-      <text x="174" y="138" font-size="20" fill="#93A3BC">type your address</text>
-      <text x="174" y="166" font-size="20" fill="#93A3BC">mc.yourdomain.com</text>
+      <text x="174" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Players</text>
+      <text x="174" y="138" font-size="20" fill="#93A3BC">connect to</text>
+      <text x="174" y="166" font-size="20" fill="#93A3BC">mc.example.com</text>
     </g>
 
     <!-- Solid strokes, not the gradient: a perfectly horizontal path has a
@@ -34,8 +34,8 @@
     <g>
       <rect x="422" y="60" width="266" height="140" rx="18" fill="#182034"/>
       <text x="555" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Rented server</text>
-      <text x="555" y="138" font-size="20" fill="#93A3BC">the public address</text>
-      <text x="555" y="166" font-size="20" fill="#93A3BC">everyone sees</text>
+      <text x="555" y="138" font-size="20" fill="#93A3BC">the only public</text>
+      <text x="555" y="166" font-size="20" fill="#93A3BC">address involved</text>
     </g>
 
     <path d="M704 130 H792" stroke="#C084FC" stroke-width="5" stroke-linecap="round" stroke-dasharray="13 9"/>
@@ -46,9 +46,9 @@
     <!-- Home -->
     <g>
       <rect x="822" y="60" width="330" height="140" rx="18" fill="#182034"/>
-      <text x="987" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Your PC at home</text>
-      <text x="987" y="138" font-size="20" fill="#93A3BC">runs the game server</text>
-      <text x="987" y="166" font-size="20" fill="#4ADE80">address stays private</text>
+      <text x="987" y="106" font-size="27" font-weight="700" fill="#F4F6FB">Home network</text>
+      <text x="987" y="138" font-size="20" fill="#93A3BC">one agent, many servers</text>
+      <text x="987" y="166" font-size="20" fill="#4ADE80">never published in DNS</text>
     </g>
   </g>
 </svg>

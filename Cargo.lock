@@ -1092,12 +1092,10 @@ dependencies = [
  "portal-proto",
  "reqwest",
  "serde",
- "serde_json",
  "thiserror",
  "time",
  "tokio",
  "tracing",
- "uuid",
 ]
 
 [[package]]

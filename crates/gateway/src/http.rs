@@ -1,15 +1,17 @@
 //! HTTP API and web UI.
 //!
 //! Two audiences with different credentials: a person holding the admin token,
-//! and agents holding the key they were issued at enrollment. An agent can
-//! read its own assignment and nothing else — it cannot list services, create
-//! them, or see another agent. If a home machine is compromised, what leaks is
-//! the port list that machine was already forwarding.
+//! and agents holding their node key. An agent can register its tunnel
+//! identity and read its own forwards, and nothing else — if a home machine is
+//! compromised, what leaks is the port list that machine was already serving.
 
 use crate::cloudflare::Cloudflare;
 use crate::config::Config;
 use crate::dns::reconcile_service;
-use crate::plan::{describe_service, PlanError, Planner};
+use crate::plan::{
+    allocate_edge_port, describe_service, normalize_local_host, normalize_subdomain, srv_for,
+    PlanError,
+};
 use crate::store::{Store, StoreError};
 use crate::{nft, wgctl, PortAllocator};
 use axum::extract::{FromRequestParts, Path, State};
@@ -19,25 +21,18 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use portal_proto::api::{
-    AgentAssignment, ApiError, CreateServiceRequest, EnrollRequest, EnrollResponse, ServiceView,
-    TunnelConfig,
+    AddPortRequest, AgentAssignment, ApiError, CreateNodeRequest, CreateNodeResponse,
+    CreateServiceRequest, RegisterRequest, RegisterResponse, ServiceView, TunnelConfig,
 };
-use portal_proto::model::Agent;
-use portal_proto::profile::{Profile, ProfileSet};
+use portal_proto::model::{Node, PortMapping, Service};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-/// How long a freshly minted enrollment token is good for. Short, because it
-/// is going to be pasted into a chat window and it buys a permanent place in
-/// the tunnel.
-const ENROLLMENT_TOKEN_LIFETIME: time::Duration = time::Duration::hours(1);
-
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<Store>,
-    pub profiles: Arc<ProfileSet>,
     pub config: Arc<Config>,
     pub admin_token: Arc<String>,
     pub cloudflare: Option<Arc<Cloudflare>>,
@@ -47,14 +42,14 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/api/status", get(status))
-        .route("/api/profiles", get(list_profiles))
-        .route("/api/agents", get(list_agents))
-        .route("/api/agents/tokens", post(create_enrollment_token))
-        .route("/api/agents/{id}", delete(delete_agent))
+        .route("/api/nodes", get(list_nodes).post(create_node))
+        .route("/api/nodes/{id}", delete(delete_node))
         .route("/api/services", get(list_services).post(create_service))
         .route("/api/services/{id}", delete(delete_service))
         .route("/api/services/{id}/enabled", post(set_service_enabled))
-        .route("/api/enroll", post(enroll))
+        .route("/api/services/{id}/ports", post(add_port))
+        .route("/api/ports/{id}", delete(remove_port))
+        .route("/api/register", post(register))
         .route("/api/assignment", get(assignment))
         .with_state(state)
 }
@@ -87,11 +82,9 @@ impl From<StoreError> for ApiErr {
     fn from(e: StoreError) -> Self {
         match e {
             StoreError::NotFound => ApiErr::new(StatusCode::NOT_FOUND, "not found"),
-            StoreError::Conflict(_) => ApiErr::new(StatusCode::CONFLICT, e.to_string()),
-            StoreError::BadEnrollmentToken => {
-                ApiErr::new(StatusCode::FORBIDDEN, "enrollment token is not valid")
+            StoreError::Conflict(_) | StoreError::SubnetExhausted => {
+                ApiErr::new(StatusCode::CONFLICT, e.to_string())
             }
-            StoreError::SubnetExhausted => ApiErr::new(StatusCode::CONFLICT, e.to_string()),
             other => {
                 tracing::error!(error = %other, "database error");
                 ApiErr::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
@@ -102,8 +95,8 @@ impl From<StoreError> for ApiErr {
 
 impl From<PlanError> for ApiErr {
     fn from(e: PlanError) -> Self {
-        // Planning errors are the operator's to fix — an unknown profile, a
-        // port collision — so they are reported verbatim rather than hidden.
+        // These are the operator's to fix — a bad subdomain, a taken port — so
+        // they are reported verbatim rather than hidden.
         ApiErr::new(StatusCode::BAD_REQUEST, e.to_string())
     }
 }
@@ -141,10 +134,10 @@ impl FromRequestParts<AppState> for AdminAuth {
     }
 }
 
-/// Proof that the caller is a specific enrolled agent.
-pub struct AgentAuth(pub Agent);
+/// Proof that the caller is a specific node's agent.
+pub struct NodeAuth(pub Node);
 
-impl FromRequestParts<AppState> for AgentAuth {
+impl FromRequestParts<AppState> for NodeAuth {
     type Rejection = ApiErr;
 
     async fn from_request_parts(
@@ -152,8 +145,8 @@ impl FromRequestParts<AppState> for AgentAuth {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let presented = bearer(parts).ok_or_else(ApiErr::unauthorized)?;
-        match state.store.authenticate_agent(presented) {
-            Ok(agent) => Ok(AgentAuth(agent)),
+        match state.store.authenticate_node(presented) {
+            Ok(node) => Ok(NodeAuth(node)),
             Err(StoreError::NotFound) => Err(ApiErr::unauthorized()),
             Err(other) => Err(other.into()),
         }
@@ -170,7 +163,6 @@ async fn index() -> Html<&'static str> {
 struct Status {
     zone: String,
     public_ip: String,
-    tunnel_subnet: String,
     edge_port_range: String,
     cloudflare_enabled: bool,
     nftables_enabled: bool,
@@ -184,78 +176,61 @@ async fn status(_: AdminAuth, State(state): State<AppState>) -> ApiResult<Json<S
     Ok(Json(Status {
         zone: state.config.gateway.zone.clone(),
         public_ip: state.config.gateway.public_ip.to_string(),
-        tunnel_subnet: state.config.tunnel.subnet.to_string(),
         edge_port_range: format!("{}-{}", range.start(), range.end()),
         cloudflare_enabled: state.cloudflare.is_some(),
         nftables_enabled: state.config.nftables.enabled,
     }))
 }
 
-async fn list_profiles(_: AdminAuth, State(state): State<AppState>) -> Json<Vec<Profile>> {
-    Json(state.profiles.iter().cloned().collect())
-}
-
 #[derive(Serialize)]
-struct AgentView {
+struct NodeView {
     #[serde(flatten)]
-    agent: Agent,
+    node: Node,
     online: bool,
     service_count: usize,
 }
 
-async fn list_agents(
-    _: AdminAuth,
-    State(state): State<AppState>,
-) -> ApiResult<Json<Vec<AgentView>>> {
+async fn list_nodes(_: AdminAuth, State(state): State<AppState>) -> ApiResult<Json<Vec<NodeView>>> {
     let now = OffsetDateTime::now_utc();
     let services = state.store.list_services()?;
-    let views = state
-        .store
-        .list_agents()?
-        .into_iter()
-        .map(|agent| AgentView {
-            online: agent.is_online(now),
-            service_count: services.iter().filter(|s| s.agent_id == agent.id).count(),
-            agent,
-        })
-        .collect();
-    Ok(Json(views))
+    Ok(Json(
+        state
+            .store
+            .list_nodes()?
+            .into_iter()
+            .map(|node| NodeView {
+                online: node.is_online(now),
+                service_count: services.iter().filter(|s| s.node_id == node.id).count(),
+                node,
+            })
+            .collect(),
+    ))
 }
 
-#[derive(Deserialize)]
-struct CreateTokenRequest {
-    #[serde(default)]
-    label: String,
-}
-
-#[derive(Serialize)]
-struct CreateTokenResponse {
-    /// Shown once. The gateway stores only a hash.
-    token: String,
-    expires_at: String,
-}
-
-async fn create_enrollment_token(
+async fn create_node(
     _: AdminAuth,
     State(state): State<AppState>,
-    Json(req): Json<CreateTokenRequest>,
-) -> ApiResult<Json<CreateTokenResponse>> {
-    let now = OffsetDateTime::now_utc();
-    let token = state
-        .store
-        .create_enrollment_token(&req.label, now, ENROLLMENT_TOKEN_LIFETIME)?;
-    let expires_at = (now + ENROLLMENT_TOKEN_LIFETIME)
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap_or_default();
-    Ok(Json(CreateTokenResponse { token, expires_at }))
+    Json(req): Json<CreateNodeRequest>,
+) -> ApiResult<(StatusCode, Json<CreateNodeResponse>)> {
+    let name = req.name.trim();
+    if name.is_empty() {
+        return Err(ApiErr::new(StatusCode::BAD_REQUEST, "give the node a name"));
+    }
+    let (node, key) = state.store.create_node(
+        name,
+        state.config.tunnel.subnet,
+        state.config.tunnel.gateway_ip,
+        OffsetDateTime::now_utc(),
+    )?;
+    Ok((StatusCode::CREATED, Json(CreateNodeResponse { node, key })))
 }
 
-async fn delete_agent(
+async fn delete_node(
     _: AdminAuth,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
-    state.store.delete_agent(id)?;
+    state.store.delete_node(id)?;
     reconcile_edge(&state).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -264,21 +239,58 @@ async fn list_services(
     _: AdminAuth,
     State(state): State<AppState>,
 ) -> ApiResult<Json<Vec<ServiceView>>> {
+    let now = OffsetDateTime::now_utc();
+    let nodes = state.store.list_nodes()?;
     let mut views = Vec::new();
     for service in state.store.list_services()? {
-        views.push(service_view(&state, service)?);
+        views.push(service_view(&state, service, &nodes, now)?);
     }
     Ok(Json(views))
 }
 
+/// Step one of adding a server: claim a subdomain on a node.
+///
+/// Deliberately does nothing else. Ports are a separate step, because the
+/// question "which machine is this?" and the question "which ports does it
+/// listen on?" are answered at different times by different people.
 async fn create_service(
     _: AdminAuth,
     State(state): State<AppState>,
     Json(req): Json<CreateServiceRequest>,
 ) -> ApiResult<(StatusCode, Json<ServiceView>)> {
-    // The agent must exist before ports are handed out, so a typo in the
-    // request cannot leave allocations pointing at nothing.
-    state.store.get_agent(req.agent_id)?;
+    state.store.get_node(req.node_id)?;
+    let subdomain = normalize_subdomain(&req.subdomain)?;
+    let name = if req.name.trim().is_empty() {
+        subdomain.clone()
+    } else {
+        req.name.trim().to_string()
+    };
+
+    let service = Service {
+        id: Uuid::new_v4(),
+        node_id: req.node_id,
+        name,
+        subdomain,
+        enabled: true,
+        created_at: OffsetDateTime::now_utc(),
+    };
+    state.store.insert_service(&service)?;
+    sync_dns(&state, service.id).await;
+
+    let nodes = state.store.list_nodes()?;
+    let view = service_view(&state, service, &nodes, OffsetDateTime::now_utc())?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+/// Step two: where the traffic actually goes.
+async fn add_port(
+    _: AdminAuth,
+    State(state): State<AppState>,
+    Path(service_id): Path<Uuid>,
+    Json(req): Json<AddPortRequest>,
+) -> ApiResult<(StatusCode, Json<ServiceView>)> {
+    let service = state.store.get_service(service_id)?;
+    let local_host = normalize_local_host(&req.local_host)?;
 
     // Rebuilt from the database every time rather than kept in memory: the
     // stored mappings are the truth about what is taken, and rebuilding is a
@@ -290,20 +302,35 @@ async fn create_service(
     let mut taken = state.store.taken_edge_ports()?;
     taken.extend(state.config.reserved_ports());
     let mut allocator = PortAllocator::with_taken(range, taken);
+    let edge_port = allocate_edge_port(&mut allocator, &req)?;
 
-    let planner = Planner {
-        profiles: &state.profiles,
-        zone: &state.config.gateway.zone,
-        edge_ip: state.config.gateway.public_ip,
-    };
-    let plan = planner.plan(&mut allocator, &req, OffsetDateTime::now_utc())?;
-    state.store.insert_service(&plan.service, &plan.mappings)?;
+    state.store.add_port(&PortMapping {
+        id: Uuid::new_v4(),
+        service_id,
+        protocol: req.protocol,
+        local_host,
+        local_port: req.local_port,
+        edge_port,
+        srv: srv_for(&req),
+    })?;
 
     reconcile_edge(&state).await;
-    sync_dns(&state, plan.service.id).await;
+    sync_dns(&state, service_id).await;
 
-    let view = service_view(&state, plan.service)?;
+    let nodes = state.store.list_nodes()?;
+    let view = service_view(&state, service, &nodes, OffsetDateTime::now_utc())?;
     Ok((StatusCode::CREATED, Json(view)))
+}
+
+async fn remove_port(
+    _: AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let service_id = state.store.delete_port(id)?;
+    reconcile_edge(&state).await;
+    sync_dns(&state, service_id).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -320,7 +347,13 @@ async fn set_service_enabled(
     state.store.set_service_enabled(id, req.enabled)?;
     reconcile_edge(&state).await;
     let service = state.store.get_service(id)?;
-    Ok(Json(service_view(&state, service)?))
+    let nodes = state.store.list_nodes()?;
+    Ok(Json(service_view(
+        &state,
+        service,
+        &nodes,
+        OffsetDateTime::now_utc(),
+    )?))
 }
 
 async fn delete_service(
@@ -329,7 +362,7 @@ async fn delete_service(
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
     let service = state.store.get_service(id)?;
-    let mappings = state.store.mappings_for_service(id)?;
+    let mappings = state.store.ports_for_service(id)?;
     state.store.delete_service(id)?;
     reconcile_edge(&state).await;
 
@@ -337,7 +370,6 @@ async fn delete_service(
     // service is gone is a black hole players keep trying to connect to.
     if let Some(cf) = &state.cloudflare {
         let described = describe_service(
-            &state.profiles,
             &service,
             &mappings,
             &state.config.gateway.zone,
@@ -356,18 +388,19 @@ async fn delete_service(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn enroll(
+/// An agent announcing itself on boot.
+///
+/// Idempotent by design: agents keep no state and generate a fresh keypair
+/// every start, so this is called on every restart and simply overwrites the
+/// stored public key. The tunnel address was fixed when the node was created.
+async fn register(
+    NodeAuth(node): NodeAuth,
     State(state): State<AppState>,
-    Json(req): Json<EnrollRequest>,
-) -> ApiResult<Json<EnrollResponse>> {
-    let (agent, agent_key) = state.store.enroll_agent(
-        &req.token,
-        &req.name,
-        req.public_key.as_str(),
-        state.config.tunnel.subnet,
-        state.config.tunnel.gateway_ip,
-        OffsetDateTime::now_utc(),
-    )?;
+    Json(req): Json<RegisterRequest>,
+) -> ApiResult<Json<RegisterResponse>> {
+    state
+        .store
+        .set_node_public_key(node.id, req.public_key.as_str())?;
 
     let gateway_public_key = state
         .gateway_public_key()
@@ -376,14 +409,14 @@ async fn enroll(
     // The peer list changed, so WireGuard needs to hear about it before the
     // agent's first handshake arrives.
     reconcile_edge(&state).await;
+    tracing::info!(node = %node.name, "agent registered");
 
-    Ok(Json(EnrollResponse {
-        agent_id: agent.id,
-        agent_key,
+    Ok(Json(RegisterResponse {
+        node_id: node.id,
         tunnel: TunnelConfig {
             gateway_public_key,
             gateway_endpoint: state.config.tunnel.endpoint.clone(),
-            tunnel_ip: agent.tunnel_ip,
+            tunnel_ip: node.tunnel_ip,
             tunnel_prefix_len: state.config.tunnel.subnet.prefix_len(),
             persistent_keepalive: state.config.tunnel.persistent_keepalive,
         },
@@ -391,15 +424,14 @@ async fn enroll(
 }
 
 async fn assignment(
-    AgentAuth(agent): AgentAuth,
+    NodeAuth(node): NodeAuth,
     State(state): State<AppState>,
 ) -> ApiResult<Json<AgentAssignment>> {
-    let forwards = state.store.forwards_for_agent(agent.id)?;
+    let forwards = state.store.forwards_for_node(node.id)?;
     Ok(Json(AgentAssignment {
         // The revision is a checksum of the content, not a counter: the agent
-        // only needs to know whether anything changed, and deriving it means
-        // a gateway restart does not make every agent think it missed an
-        // update.
+        // only needs to know whether anything changed, and deriving it means a
+        // gateway restart does not make every agent think it missed an update.
         revision: revision_of(&forwards),
         forwards,
     }))
@@ -414,8 +446,11 @@ fn revision_of(forwards: &[portal_proto::api::Forward]) -> u64 {
         hasher.update(f.local_host.as_bytes());
         hasher.update(f.local_port.to_be_bytes());
     }
-    let digest = hasher.finalize();
-    u64::from_be_bytes(digest[..8].try_into().expect("sha256 is 32 bytes"))
+    u64::from_be_bytes(
+        hasher.finalize()[..8]
+            .try_into()
+            .expect("sha256 is 32 bytes"),
+    )
 }
 
 // ---- shared work --------------------------------------------------------
@@ -429,32 +464,36 @@ impl AppState {
     }
 }
 
-fn service_view(state: &AppState, service: portal_proto::model::Service) -> ApiResult<ServiceView> {
-    let mappings = state.store.mappings_for_service(service.id)?;
+fn service_view(
+    state: &AppState,
+    service: Service,
+    nodes: &[Node],
+    now: OffsetDateTime,
+) -> ApiResult<ServiceView> {
+    let mappings = state.store.ports_for_service(service.id)?;
     let described = describe_service(
-        &state.profiles,
         &service,
         &mappings,
         &state.config.gateway.zone,
         state.config.gateway.public_ip,
     );
-    let dns_synced = state.store.is_dns_synced(service.id).unwrap_or(false);
+    let node = nodes.iter().find(|n| n.id == service.node_id);
     Ok(ServiceView {
-        service,
         fqdn: described.fqdn,
-        ports: mappings,
-        endpoints: described.endpoints,
-        config_actions: described.config_actions,
-        dns_synced,
+        node_name: node.map(|n| n.name.clone()).unwrap_or_default(),
+        node_online: node.is_some_and(|n| n.is_online(now)),
+        ports: described.ports,
+        dns_synced: state.store.is_dns_synced(service.id).unwrap_or(false),
+        service,
     })
 }
 
 /// Push the current database state into nftables and WireGuard.
 ///
-/// Failures are logged, not returned: the service is already committed, and
-/// the periodic reconcile will try again. Refusing the whole request because
-/// `nft` was briefly unhappy would leave the operator with no record of what
-/// they asked for.
+/// Failures are logged, not returned: the change is already committed, and the
+/// periodic reconcile will try again. Refusing the whole request because `nft`
+/// was briefly unhappy would leave the operator with no record of what they
+/// asked for.
 pub async fn reconcile_edge(state: &AppState) {
     if let Err(e) = reconcile_nftables(state) {
         tracing::error!(error = %e, "failed to program nftables");
@@ -481,7 +520,7 @@ fn reconcile_nftables(state: &AppState) -> anyhow::Result<()> {
 }
 
 fn reconcile_wireguard(state: &AppState) -> anyhow::Result<()> {
-    let agents = state.store.list_agents()?;
+    let nodes = state.store.list_nodes()?;
     let private_key = wgctl::load_or_create_private_key(&state.config.private_key_file())?;
     let iface = wgctl::InterfaceConfig {
         private_key,
@@ -489,28 +528,27 @@ fn reconcile_wireguard(state: &AppState) -> anyhow::Result<()> {
         address: state.config.tunnel.gateway_ip,
         prefix_len: state.config.tunnel.subnet.prefix_len(),
     };
-    let config = wgctl::render_config(&iface, &agents);
+    let config = wgctl::render_config(&iface, &nodes);
     let path = state
         .config
         .gateway
         .data_dir
         .join(format!("{}.conf", state.config.tunnel.interface));
     wgctl::apply_config(&state.config.tunnel.interface, &path, &config)?;
-    tracing::info!(peers = agents.len(), "WireGuard peers synced");
+    tracing::info!(peers = nodes.len(), "WireGuard peers synced");
     Ok(())
 }
 
-/// Publish one service's DNS, recording whether it worked so the UI can say
-/// so and the periodic reconcile can retry.
+/// Publish one service's DNS, recording whether it worked so the UI can say so
+/// and the periodic reconcile can retry.
 pub async fn sync_dns(state: &AppState, service_id: Uuid) {
     let Some(cf) = &state.cloudflare else {
         return;
     };
     let result = async {
         let service = state.store.get_service(service_id)?;
-        let mappings = state.store.mappings_for_service(service_id)?;
+        let mappings = state.store.ports_for_service(service_id)?;
         let described = describe_service(
-            &state.profiles,
             &service,
             &mappings,
             &state.config.gateway.zone,
