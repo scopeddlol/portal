@@ -1,26 +1,23 @@
-# Portal agent — run this at home, next to your servers.
+# Portal agent — runs on the private network holding the servers.
 #
-# Two values and you're done. Get them from the control panel: add a node, and
-# it shows you the key.
+# Two values, both issued by the control panel when a node is added:
 #
 #   docker compose -f agent-compose.yml up -d
 #
-# The agent keeps no state. It makes a fresh tunnel key every start and tells
-# the gateway about it, so there is nothing to back up and no volume to lose.
-# One agent reaches every machine on the network it sits in, so ten servers
-# need one of these, not ten.
+# The agent keeps no state. It generates a fresh tunnel key on each start and
+# registers it, so there is no volume to preserve. One agent reaches every
+# machine on the network it sits in.
 
 services:
   agent:
     image: ghcr.io/scopeddlol/portal-agent:beta
     container_name: portal-agent
     restart: unless-stopped
-    # Host networking so the agent can reach the rest of your LAN.
+    # Host networking so the agent can reach the rest of the network.
     network_mode: host
     cap_add:
-      # Needed to create the WireGuard interface. This is the requirement the
-      # userspace tunnel backend is meant to remove, once it exists.
+      # Required to create the WireGuard interface.
       - NET_ADMIN
     environment:
-      PORTAL_URL: https://portal.yourdomain.com
+      PORTAL_URL: https://portal.example.com
       PORTAL_KEY: paste-the-key-from-the-control-panel

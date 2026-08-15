@@ -1,78 +1,80 @@
-# Deploying
+# Deployment
 
-Two halves. The gateway runs on a rented server with a public IP; the agent
-runs at home next to the game servers. Nothing at home needs a port forward.
+The gateway runs on a rented server with a public IP; the agent runs on the
+private network holding the servers to be published. Nothing on that network
+needs an inbound port.
 
-The quick path is in the [main README](../README.md#setup) — copy four small
-files, no clone and no compiler. This page is the detail behind it.
-
-## What you need first
-
-- A server with a public IPv4 and root.
-- A domain on Cloudflare, and its **Zone ID** (zone overview page).
-- A Cloudflare API token with **Zone → DNS → Edit** on that zone and nothing
-  else. Cloudflare cannot scope a token tighter than a zone, which is why the
-  gateway refuses to touch records outside the names it created.
+The short path is in the [main README](../README.md#setup). This page covers the
+configuration in detail.
 
 ## Files
 
-| File | What it is |
+| File | Purpose |
 | --- | --- |
-| `compose.yml` | Gateway + Caddy, pulling published images. The normal way to run it. |
-| `agent-compose.yml` | The agent, for the machine at home. |
-| `Caddyfile` | HTTPS in front of the control panel. |
-| `config.example.toml` | Every setting, annotated. Copy to `config.toml`. |
-| `compose.build.yml` | Builds the gateway from source instead. For working on Portal itself. |
+| `compose.yml` | Gateway and Caddy, using the published images |
+| `agent-compose.yml` | The agent, for the private network |
+| `Caddyfile` | TLS termination in front of the control panel |
+| `config.example.toml` | Every gateway setting, annotated |
+| `compose.build.yml` | Builds the gateway from source instead of pulling it |
 
-## Two things Compose cannot do for you
+## Prerequisites
 
-**IP forwarding** has to be set on the host. Docker refuses namespaced network
+- A server with a public IPv4 address and root access.
+- A Cloudflare-managed zone and its **Zone ID**, shown on the zone overview.
+- A Cloudflare API token with **Zone → DNS → Edit** on that zone and nothing
+  more. Cloudflare cannot scope a token below zone level, which is why
+  reconciliation refuses to touch records outside the names Portal created.
+
+## Two things Compose cannot set
+
+**IP forwarding** belongs on the host. Docker rejects namespaced network
 sysctls when a container shares the host's network namespace, which the gateway
-must do, so this cannot live in `compose.yml`:
+requires, so this cannot live in `compose.yml`:
 
 ```bash
 echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-portal.conf
 sudo sysctl --system
 ```
 
-Without it, DNAT silently drops every game packet and everything else looks fine.
+Without it, DNAT drops every forwarded packet while the rest of the system
+appears healthy.
 
-**The panel's own DNS record.** Portal creates records for the game servers you
-add, but not for itself — it would have to be running and reachable to do that.
-Add an `A` record for `portal` pointing at the server, orange cloud off.
+**The control panel's own DNS record.** Portal writes records for the services
+it manages, but not for itself — doing so would require it to already be
+running and reachable. Add an `A` record for `portal` pointing at the server,
+with the Cloudflare proxy off.
 
-## Why HTTPS is not optional here
+## Why the panel is served over TLS
 
-The agent at home reaches the gateway's API over the internet, so the API has
-to be publicly reachable. The admin token protects your DNS, so it must not
-cross the internet in the clear. Caddy fetches and renews a certificate on its
-own, which makes the secure path the easy one.
+The agent reaches the gateway's API across the internet, so the API is publicly
+reachable by necessity. The admin token controls DNS for the whole zone and
+must not cross the internet in cleartext. Caddy obtains and renews a
+certificate without configuration beyond the hostname.
 
-If you would rather not expose the panel at all, bind it to localhost, reach it
-over an SSH tunnel, and put only the API behind a proxy — but the agent still
-needs a way in.
+An alternative is binding the panel to localhost and reaching it over an SSH
+tunnel, with only the API exposed through a proxy. The agent still requires a
+route in.
 
-## Checking it works
+## Verification
 
 ```bash
-# The rules the gateway wrote.
+# Rules written by the gateway.
 nft list table ip portal
 
-# Peers and handshakes. A handshake under ~2 minutes old means the agent is up.
+# Peers and handshake ages. Under ~2 minutes means the agent is connected.
 wg show wg0
 
-# What players will resolve.
+# What players resolve.
 dig +short mc.example.com
 dig +short SRV _minecraft._tcp.mc.example.com
 ```
 
-If a service shows **dns pending** in the panel, the Cloudflare call failed; the
-gateway retries once a minute and the reason is in `docker compose logs`.
+A service marked **dns pending** in the panel means the Cloudflare call failed.
+The gateway retries once a minute; the reason appears in `docker compose logs`.
 
 ## Not using the published images
 
-To build from source instead — because you are changing Portal, or you want to
-audit what you run:
+To build from source — for development, or to audit what runs:
 
 ```bash
 git clone https://github.com/scopeddlol/portal.git
@@ -82,31 +84,46 @@ $EDITOR config.toml
 docker compose -f compose.build.yml up -d --build
 ```
 
-## Without Docker at all
+## Without Docker
 
-Build with `cargo build --release`, put `portal-gateway` on the box, install
-`nftables` and `wireguard-tools`, enable IP forwarding, and run it with
-`PORTAL_CONFIG` pointing at your config. It needs `CAP_NET_ADMIN`; a systemd
-unit with `AmbientCapabilities=CAP_NET_ADMIN` is enough — it does not need to
-be root.
+Build with `cargo build --release` and install `portal-gateway` alongside
+`nftables` and `wireguard-tools`. Enable IP forwarding, and run the binary with
+`PORTAL_CONFIG` pointing at the configuration file. It needs `CAP_NET_ADMIN`
+but not root; a systemd unit with `AmbientCapabilities=CAP_NET_ADMIN` is
+sufficient.
 
-## Adding a server
+## Agent configuration
 
-In the panel: **Add service** (pick the node, choose a subdomain), then **Add
-port** on it (the server's LAN address and port). Repeat per server — one node
-serves as many as you like.
+The agent reads two variables and stores nothing:
 
-Two things the gateway cannot do for you:
+| Variable | Meaning |
+| --- | --- |
+| `PORTAL_URL` | Base URL of the gateway, e.g. `https://portal.example.com` |
+| `PORTAL_KEY` | Node key, issued when the node is created in the panel |
+| `PORTAL_INTERFACE` | WireGuard interface name (default `portal0`) |
+| `PORTAL_NO_TUNNEL` | Skip tunnel setup when WireGuard is managed elsewhere |
 
-- **Server-side config.** Some servers must be told their own public address —
-  Simple Voice Chat shows a red plug icon otherwise. Portal will not rewrite
-  your server files.
-- **Firewalls at home.** The agent connects out, so no inbound rule is needed,
-  but an outbound block on UDP 51820 will stop it.
+A fresh tunnel keypair is generated on every start and registered with the
+gateway. The node's tunnel address is fixed when the node is created, so
+restarts do not disturb the forwards pointing at it.
 
-## Why nothing here is proxied through Cloudflare
+## Publishing a server
 
-The orange cloud carries HTTP/HTTPS on a fixed set of ports. It will not carry
-TCP 25565 or UDP 24454. Every record this gateway writes is DNS-only, on
-purpose: proxying a game record would not hide anything, it would break the
-game. Cloudflare is the control plane; your server is the data plane.
+In the panel: **Add service** (node plus subdomain), then **Add port** on it
+(the server's address on the local network, and its port). One node serves any
+number of servers.
+
+Two things the gateway does not do:
+
+- **Server-side configuration.** Servers that advertise their own address —
+  Simple Voice Chat, for instance — must be told the public address by hand.
+  Portal does not modify server files.
+- **Outbound firewall rules.** The agent connects out, so no inbound rule is
+  required, but a block on outbound UDP 51820 prevents the tunnel forming.
+
+## Cloudflare's role
+
+The Cloudflare proxy carries HTTP/HTTPS on a fixed set of ports and will not
+carry TCP 25565 or UDP 24454. Every record Portal writes is DNS-only by
+construction: proxying a game record would break the game rather than conceal
+anything. Cloudflare is the control plane; the rented server is the data plane.

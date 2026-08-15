@@ -1,7 +1,7 @@
 # Build the gateway from source instead of pulling the published image.
 #
-# For developing on Portal itself. If you just want to run it, use compose.yml,
-# which needs no clone and no toolchain.
+# For development. compose.yml pulls the published images instead and needs
+# neither a clone nor a toolchain.
 #
 #   docker compose -f compose.build.yml up -d --build
 #
@@ -28,8 +28,8 @@ services:
       - portal-data:/var/lib/portal
       - ./config.toml:/etc/portal/config.toml:ro
     environment:
-      # Secrets stay out of config.toml. Put them in deploy/.env, which is
-      # gitignored, or hand them in from your own secret store.
+      # Secrets stay out of config.toml. deploy/.env is gitignored, or supply
+      # them from an external secret store.
       - PORTAL_CF_API_TOKEN=${PORTAL_CF_API_TOKEN}
       - PORTAL_ADMIN_TOKEN=${PORTAL_ADMIN_TOKEN}
       - RUST_LOG=portal_gateway=info
