@@ -38,8 +38,10 @@ listen_port = 51820
 # fine if it will not.
 endpoint = "vps.example.com:51820"
 
-# Generated on first start if absent, and written owner-only.
-private_key_file = "/etc/portal/keys/wg-private.key"
+# Optional. Defaults to <data_dir>/wg-private.key, generated on first start
+# and written owner-only. It is state: regenerating it orphans every enrolled
+# agent, so keep it wherever you already persist data.
+# private_key_file = "/var/lib/portal/wg-private.key"
 
 # Agents are behind home NAT and the gateway can never dial them, so the
 # binding is held open from their side.

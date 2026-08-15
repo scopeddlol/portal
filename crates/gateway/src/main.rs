@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Make sure the key exists before anything asks for the public half, so
     // the first enrollment does not race file creation.
-    let private_key = wgctl::load_or_create_private_key(&config.tunnel.private_key_file)?;
+    let private_key = wgctl::load_or_create_private_key(&config.private_key_file())?;
     if let Ok(public) = portal_proto::wg::public_from_private(&private_key) {
         tracing::info!(public_key = %public, endpoint = %config.tunnel.endpoint, "gateway tunnel identity");
     }

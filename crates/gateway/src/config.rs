@@ -100,9 +100,11 @@ pub struct TunnelSection {
     /// and `listen_port`, but a hostname works and survives an IP change.
     pub endpoint: String,
     /// Path to the gateway's WireGuard private key. Generated on first start
-    /// if missing.
-    #[serde(default = "default_key_file")]
-    pub private_key_file: PathBuf,
+    /// if missing. Defaults to sitting inside `data_dir`, because it is state:
+    /// regenerating it orphans every enrolled agent, so it has to land
+    /// wherever the operator already persists things.
+    #[serde(default)]
+    pub private_key_file: Option<PathBuf>,
     /// Agents are behind home NAT, so they must keep the binding alive; the
     /// gateway can never dial them first.
     #[serde(default = "default_keepalive")]
@@ -167,9 +169,6 @@ fn default_wg_interface() -> String {
 fn default_wg_port() -> u16 {
     51820
 }
-fn default_key_file() -> PathBuf {
-    PathBuf::from("/etc/portal/wg-private.key")
-}
 fn default_keepalive() -> u16 {
     25
 }
@@ -215,6 +214,14 @@ impl Config {
 
     pub fn database_path(&self) -> PathBuf {
         self.gateway.data_dir.join("portal.db")
+    }
+
+    /// Where the gateway's WireGuard private key lives.
+    pub fn private_key_file(&self) -> PathBuf {
+        self.tunnel
+            .private_key_file
+            .clone()
+            .unwrap_or_else(|| self.gateway.data_dir.join("wg-private.key"))
     }
 
     /// Ports that must stay clear of allocation: the gateway's own listener if
@@ -344,6 +351,29 @@ zone_id = "abc123"
         let value = read_secret("PORTAL_TEST_SECRET", Some(Path::new("/nonexistent"))).unwrap();
         assert_eq!(value.as_deref(), Some("from-env"));
         unsafe { std::env::remove_var("PORTAL_TEST_SECRET") };
+    }
+
+    #[test]
+    fn the_wireguard_key_defaults_into_the_data_directory() {
+        let config = parse(MINIMAL).unwrap();
+        assert_eq!(
+            config.private_key_file(),
+            Path::new("/var/lib/portal/wg-private.key"),
+            "the key is state; losing it orphans every enrolled agent, so it \
+             belongs wherever the operator already persists things"
+        );
+    }
+
+    #[test]
+    fn an_explicit_key_path_still_wins() {
+        let src = MINIMAL.replace(
+            "endpoint = \"vps.example.com:51820\"",
+            "endpoint = \"vps.example.com:51820\"\nprivate_key_file = \"/etc/portal/wg.key\"",
+        );
+        assert_eq!(
+            parse(&src).unwrap().private_key_file(),
+            Path::new("/etc/portal/wg.key")
+        );
     }
 
     #[test]
