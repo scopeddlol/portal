@@ -168,7 +168,7 @@ pub fn reconcile_service(
     }
 
     // Whatever is left under this service's names is stale: a port that moved,
-    // a profile that was removed, or a duplicate of a record we just matched.
+    // a mapping that was removed, or a duplicate of a record we just matched.
     for (i, existing) in mine.iter().enumerate() {
         if !matched[i] {
             plan.delete.push(existing.id.clone());

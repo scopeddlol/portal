@@ -34,6 +34,11 @@ pub enum StoreError {
     SubnetExhausted,
     #[error("stored value is corrupt: {0}")]
     Corrupt(String),
+    #[error(
+        "this database predates the node/service/port model and cannot be upgraded in place; \
+         delete it (or the portal-data volume) and start again"
+    )]
+    IncompatibleSchema,
 }
 
 type Result<T> = std::result::Result<T, StoreError>;
@@ -73,6 +78,7 @@ impl Store {
     }
 
     fn migrate(&self) -> Result<()> {
+        self.check_compatible()?;
         self.conn().execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS nodes (
@@ -112,6 +118,35 @@ impl Store {
             "#,
         )?;
         Ok(())
+    }
+
+    /// Refuse a database written by an older, incompatible schema.
+    ///
+    /// `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so the
+    /// migration below would run happily against the old shape and then fail
+    /// deep inside an index with "no such column: node_id" — which tells an
+    /// operator nothing about what to do. Detect it up front and say so.
+    fn check_compatible(&self) -> Result<()> {
+        let conn = self.conn();
+        let services_exists: bool = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'services'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? > 0;
+        if !services_exists {
+            return Ok(());
+        }
+        let mut stmt = conn.prepare("SELECT name FROM pragma_table_info('services')")?;
+        let has_node_id = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .iter()
+            .any(|name| name == "node_id");
+        if has_node_id {
+            Ok(())
+        } else {
+            Err(StoreError::IncompatibleSchema)
+        }
     }
 
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -835,6 +870,32 @@ mod tests {
             .get_node(n.id)
             .unwrap()
             .is_online(now() + time::Duration::hours(1)));
+    }
+
+    #[test]
+    fn a_database_from_the_old_model_is_refused_with_an_explanation() {
+        let dir = std::env::temp_dir().join(format!("portal-old-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("portal.db");
+        {
+            // The shape before nodes existed: services keyed by agent_id.
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE services (id TEXT PRIMARY KEY, agent_id TEXT, subdomain TEXT);",
+            )
+            .unwrap();
+        }
+
+        let err = match Store::open(&path) {
+            Err(e) => e,
+            Ok(_) => panic!("an unupgradable database must not be opened"),
+        };
+        assert!(matches!(err, StoreError::IncompatibleSchema));
+        assert!(
+            err.to_string().contains("delete it"),
+            "the message has to say what to do: {err}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

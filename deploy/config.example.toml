@@ -15,7 +15,6 @@ zone = "example.com"
 listen = "127.0.0.1:8080"
 
 data_dir = "/var/lib/portal"
-profiles_dir = "/etc/portal/profiles"
 
 # Public ports handed out when a game's own port is already taken. Kept below
 # Linux's ephemeral range (32768-60999) so an allocated port cannot collide
